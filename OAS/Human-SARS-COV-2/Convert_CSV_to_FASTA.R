@@ -5,24 +5,21 @@ DataFiles <- list.files(path = DataFolder, pattern = ".csv.gz", all.files = FALS
                         include.dirs = FALSE, no.. = FALSE)
 
 library(data.table)
-Listdata <- lapply(DataFiles, fread, sep=",")
-
 Listdata <- lapply(c(1:length(DataFiles)), function(i){
   dat <- fread((DataFiles[i]), header = TRUE, skip = 1)
   Datafilename <- substr(basename(DataFiles[i]), 1, nchar(basename(DataFiles[i]))-7)
   cbind(Datafilename, dat)
 })
-
 Datatable <- rbindlist( Listdata )
 
-Sequences <- as.list(Datatable$sequence_alignment_aa_heavy)
 
-Nameseq <- paste(Datatable$Datafilename, Datatable$sequence_id_heavy, Datatable$sequence_id_light, sep = " ")
+Sequences <- as.list(c(Datatable$sequence_alignment_aa_heavy, Datatable$sequence_alignment_aa_light))
 
-#OAS_dat <- fread(DataFiles[1], header = TRUE, skip = 1)
+Nameseq <- c(paste(Datatable$Datafilename,"_heavy ", sep = ""), paste(Datatable$Datafilename,"_light ", sep = ""))
+                
 
 library(seqinr)
-write.fasta(Sequences, 
+write.fasta(Sequences,   # sequences
             Nameseq, # name of sequences
             paste(DataFolder,"/OAS_SARS_COV2.fasta", sep = ""), # location to save fasta file  
             open = "w", nbchar = 60, as.string = TRUE)
