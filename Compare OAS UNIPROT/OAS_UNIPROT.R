@@ -38,4 +38,4 @@ ResultTable <- data.frame("Sequence"      = OASdata$Sequence,
                           "OAS_check"     = 1,
                           "UNIPROT_check" = OASdata$UNIPROTcheck)
 
-write.csv(ResultTable, file = paste(getwd(), "/OAS_UNIPROT_checked.csv", sep = ""))
+write.csv(ResultTable, file = paste(getwd(), "/OAS_UNIPROT_checked.csv", sep = ""), row.names = F)
