@@ -38,4 +38,37 @@ ResultTable <- data.frame("Sequence"      = OASdata$Sequence,
                           "OAS_check"     = 1,
                           "UNIPROT_check" = OASdata$UNIPROTcheck)
 
-write.csv(ResultTable, file = paste(getwd(), "/OAS_UNIPROT_checked.csv", sep = ""))
+write.csv(ResultTable, file = paste(getwd(), "/OAS_UNIPROT_checked.csv", sep = ""), row.names = F)
+
+
+# Draw upset plot
+library(UpSetR)
+input <- c(
+  OAS.SARS.COV.2 = length(OASdata$Sequence),
+  UNIPROT.human  = length(UNIPROTdata$Sequence),
+  OAS.SARS.COV.2.unique = length(unique(OASdata$Sequence)),
+  UNIPROT.human.unique  = length(unique(UNIPROTdata$Sequence)),
+  "OAS.SARS.COV.2&UNIPROT.human" = sum(OASdata$UNIPROTcheck),
+  "OAS.SARS.COV.2.unique&UNIPROT.human.unique" = length(a)
+)
+
+Upsetplot <- upset(fromExpression(input), 
+                   nintersects = 40, 
+                   nsets = 6, 
+                   order.by = "freq", 
+                   decreasing = T, 
+                   mb.ratio = c(0.6, 0.4),
+                   number.angles = 0, 
+                   text.scale = 1.1, 
+                   point.size = 2.8, 
+                   line.size = 1
+)
+
+
+# Save Plot to pdf file
+pdf(paste(getwd(),"UpsetPlot.pdf", sep="/"),         # File name
+    width = 8, height = 6, # Width and height in inches
+    bg = "white",          # Background color
+    colormodel = "cmyk")   # Color model (cmyk is required for most publications)
+Upsetplot
+dev.off()
