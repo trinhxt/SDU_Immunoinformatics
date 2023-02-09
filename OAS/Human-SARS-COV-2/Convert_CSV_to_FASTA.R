@@ -11,11 +11,12 @@ Listdata <- lapply(c(1:length(DataFiles)), function(i){
   cbind(Datafilename, dat)
 })
 Datatable <- rbindlist( Listdata )
-
+Datatable$Antibody_ID <- c(1:nrow(Datatable))
 
 Sequences <- as.list(c(Datatable$sequence_alignment_aa_heavy, Datatable$sequence_alignment_aa_light))
 
-Nameseq <- c(paste(Datatable$Datafilename,"_heavy ", sep = ""), paste(Datatable$Datafilename,"_light ", sep = ""))
+Nameseq <- c(paste(Datatable$Antibody_ID,"heavy ", sep = "_"), 
+             paste(Datatable$Antibody_ID,"light ", sep = "_"))
                 
 
 library(seqinr)
@@ -23,3 +24,4 @@ write.fasta(Sequences,   # sequences
             Nameseq, # name of sequences
             paste(DataFolder,"/OAS_SARS_COV2.fasta", sep = ""), # location to save fasta file  
             open = "w", nbchar = 60, as.string = TRUE)
+write.csv(Datatable, file = paste(DataFolder,"/OAS_SARS_COV2.csv", sep = ""), row.names = F)
