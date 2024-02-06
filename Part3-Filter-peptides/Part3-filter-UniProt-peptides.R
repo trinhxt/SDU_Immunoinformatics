@@ -90,34 +90,4 @@ Table1$Gene <- factor(Table1$Gene, levels = Table1$Gene)
 # Save to csv
 write.csv(Table1, file = "P4-OAS-SARS-COV2-Gene_dist.csv", row.names = F)
 
-# Draw plot gene distribution
-library(ggplot2)
-Dataplot <- Table1
-HistPlot <- ggplot(data = Dataplot, aes(x=Gene, y=No.peptide.seqs)) +
-  geom_bar(position="stack", stat="identity", alpha=1.0, linewidth=0.02, width=0.75, color="orange", fill="orange") +
-  xlab("Gene") + ylab("Number of peptide sequences") +
-  guides(fill=guide_legend(ncol = 1, title=" ")) +
-  theme(axis.text.x=element_text(angle=90,vjust=0.5),
-        legend.spacing.y = unit(20, "pt"),
-        legend.position = "right") +
-  guides(fill=guide_legend(title="Bio-project"))
-HistPlot
-# Save plot to pdf
-pdf(file = paste(getwd(), "/P4-Gene_dist_all_non_UniProt_peptides_", Sys.Date(), ".pdf", sep = ""), width = 15, height = 6)
-HistPlot
-dev.off()
 
-# Draw plot as percentage
-HistPlot <- ggplot(data = Dataplot, aes(x=Gene, y=Percent)) +
-  geom_bar(position="stack", stat="identity", alpha=1.0, linewidth=0.02, width=0.75, color="orange", fill="orange") +
-  xlab("Gene") + ylab("Fraction (%)") +
-  guides(fill=guide_legend(ncol = 1, title=" ")) +
-  theme(axis.text.x=element_text(angle=90,vjust=0.5),
-        legend.spacing.y = unit(20, "pt"),
-        legend.position = "right") +
-  guides(fill=guide_legend(title="Bio-project"))
-HistPlot
-# Save plot to pdf
-pdf(file = paste(getwd(), "/P4-Gene_dist_all_non_UniProt_peptides_percent_", Sys.Date(), ".pdf", sep = ""), width = 15, height = 6)
-HistPlot
-dev.off()
