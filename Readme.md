@@ -50,7 +50,7 @@ below:
 | Chain        | Specifying heavy or light chain                                                  | Heavy      |
 | Isotype      | Isotype of heavy chain if available (IgG, IgM, etc.), Bulk stands for unassigned | \*         |
 
-Table 1. Keywords search in OAS database for SARS-CoV-2.
+**Table 1**. Keywords search in OAS database for SARS-CoV-2.
 
 After choosing keywords and clicking Search button, the website will
 give us results: *Your search yielded 30,966,193 unique sequences from 9
@@ -58,7 +58,7 @@ studies… A shell-script with the commands to download all the data-units
 in this subset of OAS can be downloaded
 [here](blob:https://opig.stats.ox.ac.uk/e3480b42-4861-49e6-9b5d-e1852b32baa1).*
 We downloaded the shell-script file (`bulk_download.sh`) and saved it to
-the directory `Part0-Download-data`.
+the directory `Part1-Download-data`.
 
 In order to download all data files, we use terminal (in Mac and Linux,
 in Windows we can use terminal of [WSL - Windows Subsystem for
@@ -77,7 +77,7 @@ There are total 990 data file and the size of all data is 13 GB.
 In this part, we will read the downloaded data (`csv` format) and save
 it as `fasta` format (for later *in silico* digestion) and `feather`
 format (for later load and use). Full R code and metadata file for this
-part are saved in the folder `Part1-Read-csv-data` of this Github
+part are saved in the folder `Part2-Read-csv-data` of this Github
 repository.
 
 We will read 990 data files (`csv` format )with the size of 13GB. This
@@ -85,8 +85,8 @@ task requires at least 32GB of RAM by using `fread` function of the
 `data.table` package. For computers with less than 32GB of RAM, we
 recommend to use `diskframe` package as below (the data will be read
 from and saved to the hard disk, bypassing storage in RAM to prevent
-overloading the computer’s memory). After reading the whole csv data, we
-save it as feather format (feather format is designed to make reading
+overloading the computer’s memory). After reading the whole `csv` data,
+we save it as feather format (feather format is designed to make reading
 and writing big data frames efficient).
 
 ``` r
@@ -109,12 +109,13 @@ DataFiles <- list.files(path = DataFolder, pattern = ".csv.gz", all.files = FALS
                         include.dirs = FALSE, no.. = FALSE)
 
 # Read metadata file (OAS-SARS-COV-2-summary.csv) and add columns Filename and PatientID
-DataSummary <- read.csv(file = "OAS-SARS-COV-2-summary.csv", header = T)
+DataSummary <- read.csv(file = dlg_open(title = c("Select metadata file ", "OAS-SARS-COV-2-summary.csv:"), filters = dlg_filters[c("All"), ])$res,
+                        header = T)
 DataSummary$Filename <- basename(DataSummary$DownloadLink)
 DataSummary$PatientID <- paste(DataSummary$DS.Name, DataSummary$Individual, sep = "_")
 
 # Set folder for saving data
-setwd(dlg_dir(title = "Select where to save data:", filters = dlg_filters[c("All"), ])$res)
+#setwd(dlg_dir(title = "Select where to save data:", filters = dlg_filters[c("All"), ])$res)
 
 
 # Assign a temporary folder to save disk frame data
@@ -130,15 +131,16 @@ setwd(tempFolder)
     overwrite = T)
 })
 
-# Row-bind list of disk.frames together into one big diskframe
- DatatableDisk <- rbindlist.disk.frame(Listdata,
+# Combine list of disk.frames together into one big diskframe
+ OAS_Abs <- rbindlist.disk.frame(Listdata,
                                   outdir = (paste(tempFolder, "/OAS-SARS-COV2_Antibodies", sep = "")),
                                   overwrite = T,
                                   by_chunk_id = TRUE,
                                   parallel = TRUE)
 
 # Load OAS data that was saved in hard disk:
-OAS_Abs <- disk.frame(dlg_dir(title = "Select disk frame data folder:", filters = dlg_filters[c("All"), ])$res)
+# OAS_Abs <- disk.frame(dlg_dir(title = "Select disk frame data folder:", filters = dlg_filters[c("All"), ])$res)
+
 # Check column names and row number of OAS_Abs
 OAS_colnames <- colnames(OAS_Abs); OAS_colnames
 nrow(OAS_Abs)
@@ -159,7 +161,7 @@ Datatable  <- OAS_Abs %>% select(sequence_alignment_aa,
 # Add AntibodyID column
 Datatable$AntibodyID <- c(1:nrow(OAS_Abs))
 
-# Make a vector of Data file names that match the 
+# Make a vector of Data file names that match the file names of each csv data
 Datafilename <- lapply(c(1:length(DataFiles)), function(i){
   rep(basename(DataFiles[i]), DataSummary$Unique.Sequences[DataSummary$Filename==basename(DataFiles[i])])
 })
@@ -170,7 +172,7 @@ Datatable$Datafilename <- unlist(Datafilename)
 Datatable$v_call <- gsub("\\*.*","", Datatable$v_call)
 
 # Save data to feather file
-write_feather(Datatable, paste(dirname(DataFolder),"/OAS-SARS-COV2_Antibodies_", Sys.Date(), ".feather", sep = ""))
+write_feather(Datatable, paste(tempFolder,"/OAS-SARS-COV2_Antibodies_", Sys.Date(), ".feather", sep = ""))
 ```
 
 Save antibody sequences to `fasta` format:
@@ -191,8 +193,21 @@ Nameseq <- c(paste(NameList, Datatable$AntibodyID, sep = "__"))
 library(seqinr)
 write.fasta(Sequences,   # sequences
             Nameseq, # name of sequences
-            paste(dirname(DataFolder),"/OAS-SARS-COV2_Antibodies_", Sys.Date(), ".fasta", sep = ""), # location to save fasta file  
+            paste(dirname(tempFolder),"/OAS-SARS-COV2_Antibodies_", Sys.Date(), ".fasta", sep = ""), # location to save fasta file  
             open = "w", nbchar = 60, as.string = TRUE)
 ```
 
 ## 3. *In silico* digestion of antibody sequences
+
+We use [Protein Digestion
+Simulator](https://github.com/PNNL-Comp-Mass-Spec/Protein-Digestion-Simulator)
+software for *in silico* digestion of antibody sequences. The digestion
+settings were: fully tryptic (KR not P), max missed cleavages of 0,
+minimum fragment mass of 400, and maximum fragment mass of 6000. After
+the digestion of 30,966,193 antibody sequences, we obtain a text file of
+18,419,969 distinct trypic peptides. The digestion of 42,421 protein
+sequences of UniProt gave 691,027 distint peptides.
+
+## 4. Filtering peptides
+
+## 5. Creating databases for bottom-up proteomics

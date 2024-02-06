@@ -20,7 +20,7 @@ Remaining content of this document is for creating those databases.
 The antibody sequences (heavy chains) were downloaded from The Observed Antibody Space database ([OAS](https://opig.stats.ox.ac.uk/webapps/oas/oas_unpaired/)). In this study, we focus on antibodies of SARS-CoV-2, so we choose keywords as below:
 
 | Keyword      | Note                                                                             | Value      |
-|-----------------|---------------------------------------|-----------------|
+|--------------|----------------------------------------------------------------------------------|------------|
 | Species      | Species being sequenced                                                          | human      |
 | BSource      | Organ or tissue from where the B-cells were collected                            | PBMC       |
 | BType        | Type of B-cells                                                                  | \*         |
@@ -34,7 +34,7 @@ The antibody sequences (heavy chains) were downloaded from The Observed Antibody
 
 : **Table 1**. Keywords search in OAS database for SARS-CoV-2.
 
-After choosing keywords and clicking Search button, the website will give us results: *Your search yielded 30,966,193 unique sequences from 9 studies... A shell-script with the commands to download all the data-units in this subset of OAS can be downloaded [here](blob:https://opig.stats.ox.ac.uk/e3480b42-4861-49e6-9b5d-e1852b32baa1).* We downloaded the shell-script file (`bulk_download.sh`) and saved it to the directory `Part0-Download-data`.
+After choosing keywords and clicking Search button, the website will give us results: *Your search yielded 30,966,193 unique sequences from 9 studies... A shell-script with the commands to download all the data-units in this subset of OAS can be downloaded [here](blob:https://opig.stats.ox.ac.uk/e3480b42-4861-49e6-9b5d-e1852b32baa1).* We downloaded the shell-script file (`bulk_download.sh`) and saved it to the directory `Part1-Download-data`.
 
 In order to download all data files, we use terminal (in Mac and Linux, in Windows we can use terminal of [WSL - Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/)), navigate the terminal to where the `bulk_download.sh` file was saved and run the command:
 
