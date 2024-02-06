@@ -51,7 +51,7 @@ Table2 <- data.table("DBs"        = c("DB1", "DB2", "DB3", "DB4", "DB5", "DB6"),
                      "Abs_no"     = No_Abs_DBs,
                      "Abs_pct"    = round(No_Abs_DBs/N_Abs*100,3))
 
-write.csv(Table2, file = "P5-DBs-antibody-coverage.csv", row.names = F)
+write.csv(Table2, file = "DBs-antibody-coverage.csv", row.names = F)
 
 
 
@@ -80,7 +80,7 @@ for (i in c(1:length(Top_pep))) {
 
 
 #-------------------------------------------------------------------------------
-# Combine fasta files (our peptide list and contaminats) together
-# Go to Terminal, go to folder containing fasta files, run below command
-cat *.fasta > DB6.fasta
-
+# Combine fasta files (our peptide list and contaminants) together
+# Go to Terminal, go to folder containing DB1.fasta, cRAP.fasta, and UNIPROT_includeIsoform_2023.03.03.fasta, run below command
+cat *.fasta > DB1.fasta
+# Repeat it for other databases DB2-6
