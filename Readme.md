@@ -92,7 +92,7 @@ and writing big data frames efficient).
 After running the below code, we obtain a feather file containing
 30,966,193 antibody sequences, the file is named as
 `OAS-SARS-COV2_Antibodies_2023-05-15.feather` and available at
-[Zenodo](https://doi.org/10.5281/zenodo.10561457).
+[Zenodo](https://doi.org/10.5281/zenodo.10566370).
 
 ``` r
 library(svDialogs)
@@ -182,7 +182,7 @@ write_feather(Datatable, paste(tempFolder,"/OAS-SARS-COV2_Antibodies_", Sys.Date
 
 Save antibody sequences to `fasta` format (the `fasta` file that authors
 made is named as `OAS-SARS-COV2_Antibodies_2023-05-15.fasta` and
-available at [Zenodo](https://doi.org/10.5281/zenodo.10561457)):
+available at [Zenodo](https://doi.org/10.5281/zenodo.10566370)):
 
 ``` r
 # Save antibody sequences to fasta file
@@ -225,7 +225,7 @@ big data (20GB), so we use `diskframe` package to read and extract data
 from it. After this step, we obtain a `feather` file containing OAS
 antibody peptides
 (`OAS-SARS-COV2_peptides_non-UniProt_2023-05-16.feather` which is
-available at [Zenodo](https://doi.org/10.5281/zenodo.10561457)).
+available at [Zenodo](https://doi.org/10.5281/zenodo.10566370)).
 
 ``` r
 library(svDialogs)
@@ -314,7 +314,7 @@ write_feather(OAS1, paste("OAS-SARS-COV2_peptides_non-UniProt_", Sys.Date(), ".f
 
 Run the below codes for creating 6 databases (DB1-6) for later use in
 bottom-up proteomics. We made those database available at
-[Zenodo](https://doi.org/10.5281/zenodo.10561457).
+[Zenodo](https://doi.org/10.5281/zenodo.10566370).
 
 ``` r
 library(svDialogs)
