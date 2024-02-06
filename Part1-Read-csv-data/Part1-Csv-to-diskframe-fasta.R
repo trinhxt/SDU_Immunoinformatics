@@ -10,40 +10,42 @@ options(future.globals.maxSize = Inf)
 
 # Choose data folder
 DataFolder <- dlg_dir(title = "Select csv data folder:", filters = dlg_filters[c("All"), ])$res
-# Set working folder
-#setwd(paste(dirname(DataFolder), "/5-Data_save", sep = ""))
+
 # Get list of data files
 DataFiles <- list.files(path = DataFolder, pattern = ".csv.gz", all.files = FALSE, 
                         full.names = TRUE, recursive = TRUE, ignore.case = FALSE, 
                         include.dirs = FALSE, no.. = FALSE)
 
-# Read summary file and add columns Filename and PatientID
+# Read metadata file (OAS-SARS-COV-2-summary.csv) and add columns Filename and PatientID
 DataSummary <- read.csv(file = "OAS-SARS-COV-2-summary.csv", header = T)
 DataSummary$Filename <- basename(DataSummary$DownloadLink)
 DataSummary$PatientID <- paste(DataSummary$DS.Name, DataSummary$Individual, sep = "_")
 
-# Assign temp folder to save disk frame data
-#tempFolder <- "D:/DwnlData/Diskframe"
+# Set folder for saving data
+setwd(dlg_dir(title = "Select where to save data:", filters = dlg_filters[c("All"), ])$res)
+
+
+# Assign a temporary folder to save disk frame data
 tempFolder <- dlg_dir(title = "Select temporory folder to save disk frame:", filters = dlg_filters[c("All"), ])$res
+setwd(tempFolder)
 
 # Read each csv file, save them as a list of diskframes to tempFolder
-# Listdata <- lapply(c(1:length(DataFiles)), function(i){
-# dat <- csv_to_disk.frame(
-#    DataFilesFilter[i], 
-#    outdir = file.path(paste(tempFolder, "/tmp_",i, sep = "")),
-#    nchunks = 60,
-#    overwrite = T)
-#})
+ Listdata <- lapply(c(1:length(DataFiles)), function(i){
+ dat <- csv_to_disk.frame(
+    DataFilesFilter[i], 
+    outdir = file.path(paste(tempFolder, "/tmp_",i, sep = "")),
+    nchunks = 60,
+    overwrite = T)
+})
 
 # Row-bind list of disk.frames together into one big diskframe
-# DatatableDisk <- rbindlist.disk.frame(Listdata,
-#                                  outdir = (paste(tempFolder, "/OAS-SARS-COV2_Antibodies", sep = "")),
-#                                  overwrite = T,
-#                                  by_chunk_id = TRUE,
-#                                  parallel = TRUE)
+ DatatableDisk <- rbindlist.disk.frame(Listdata,
+                                  outdir = (paste(tempFolder, "/OAS-SARS-COV2_Antibodies", sep = "")),
+                                  overwrite = T,
+                                  by_chunk_id = TRUE,
+                                  parallel = TRUE)
 
 # Load OAS data that was saved in hard disk:
-#OAS_Abs <- disk.frame("D:/DwnlData/Diskframe/OAS-SARS-COV2_Antibodies")
 OAS_Abs <- disk.frame(dlg_dir(title = "Select disk frame data folder:", filters = dlg_filters[c("All"), ])$res)
 # Check column names and row number of OAS_Abs
 OAS_colnames <- colnames(OAS_Abs); OAS_colnames
