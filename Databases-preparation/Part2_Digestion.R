@@ -1,18 +1,19 @@
-#-------------------------------------------------------------------------------
-# Set a custom library path (optional)
-custom_lib <- "/work/Immunoinformatics/R-packages-RStudio/"
+################################################################################
+## Section 2.0: Set a custom library path (optional)
+custom_lib <- "/work/Immunoinformatics/R-packages-RStudio/" # Change this to your directory
 #custom_lib <- "/work/Immunoinformatics/R-packages-Ubuntu/"
 .libPaths(custom_lib)
 
-# Load all packages
-cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "parallel", "DBI", "RSQLite", "tools")
+
+################################################################################
+## Section 2.1: Load all packages
+cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "duckdb", "DBI", "RSQLite", "plotly")
 bioc_packages <- c("cleaver", "Biostrings", "GenomeInfoDb")
 lapply(c(cran_packages, bioc_packages), require, character.only = TRUE)
 
 
-
 ################################################################################
-## In silico digestion of proteins in UniProt and NCBI-RefSeq
+## Section 2.2: In silico digestion of proteins in UniProt and NCBI-RefSeq
 ## Read UniProt data
 fasta_file <- ("UniProt_TR_SP_Human_2024_07_25.fasta")
 # Read the FASTA file
@@ -68,7 +69,7 @@ save(UniProtNCBI_Tryptic, file = "UniProtNCBI_Tryptic.RData")
 
 
 ################################################################################
-## In silico digestion of antibodies in OAS_full folder
+## Section 2.3: In silico digestion of antibodies in OAS_full folder
 # Create directories if they don't exist
 dir.create("OAS_tryptic", showWarnings = FALSE)
 dir.create("OAS_tryptic/None", showWarnings = FALSE)
@@ -109,7 +110,7 @@ file_paths_disease <- file.path("OAS_full", metadata_disease$Filename)
 
 
 ################################################################################
-# Section 1: Digest antibodies in Disease-specific files
+## Section 2.3.1: Digest antibodies in Disease-specific files
 # Each disease is one data with 2 columns: Sequence, Antibody
 processed_diseases_file <- "Log_files/Part2_Digestion_processed_diseases1.txt"
 
@@ -216,7 +217,7 @@ if (nrow(disease_summary) > 0) {
 
 
 ################################################################################
-# Section 2: Digest antibodies in Disease-specific files
+## Section 2.3.2: Digest antibodies in Disease-specific files
 # Each disease is one data with 2 columns: Sequence, Filename
 processed_diseases_file <- "Log_files/Part2_Digestion_processed_diseases2.txt"
 
@@ -333,7 +334,7 @@ if (nrow(disease_summary) > 0) {
 
 
 ################################################################################
-# Section 3: Digest antibodies in "None" disease files
+## Section 2.3.3: Digest antibodies in "None" disease files
 # save them to files with same names as digested files
 
 processed_none_file <- "Log_files/Part2_Digestion_processed_none_files.txt"
@@ -415,7 +416,7 @@ if (length(file_paths_none) > 0) {
 
 
 ################################################################################
-# Section 4: Save disease peptides to RData files
+## Section 2.4: Save disease peptides to RData files
 
 # Define the directory containing the .csv.gz files
 directory_path <- "OAS_tryptic/Disease_index_ab"

@@ -1,17 +1,22 @@
-#-------------------------------------------------------------------------------
-# Set a custom library path (optional)
+################################################################################
+## Section 1.0: Set a custom library path (optional)
 custom_lib <- "/work/Immunoinformatics/R-packages-RStudio/" # Change this to your directory
 #custom_lib <- "/work/Immunoinformatics/R-packages-Ubuntu/"
 .libPaths(custom_lib)
 
-# Load all packages
-cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "parallel", "DBI", "RSQLite", "tools")
+
+################################################################################
+## Section 1.1: Load all packages
+cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "duckdb", "DBI", "RSQLite", "plotly")
 bioc_packages <- c("cleaver", "Biostrings", "GenomeInfoDb")
 lapply(c(cran_packages, bioc_packages), require, character.only = TRUE)
 
+
 ################################################################################
-# Read URLs from the shell script file
-shell_script_file <- "bulk_download.sh"
+## Section 1.2: Prepare functions and file containing download links
+
+#  Read URLs from the shell script file
+shell_script_file <- "bulk_download.sh" # this file was obtained from OAS database, it contains download links
 lines <- readLines(shell_script_file)
 urls <- sub("wget ", "", lines)
 
@@ -86,7 +91,8 @@ process_file <- function(url, index, total) {
   }
 }
 
-# Process each file in the list with an indication of progress
+################################################################################
+## Section 1.3:  Process each file in the list with an indication of progress 
 lapply(seq_along(urls), function(i) process_file(urls[i], i, total_files))
 
 # Combine all metadata data frames into a single data frame

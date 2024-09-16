@@ -1,20 +1,19 @@
-#-------------------------------------------------------------------------------
-# Ensure required packages are installed and loaded with auto-update option
-# Set a custom library path
-setwd("/work/Immunoinformatics/Antibody-DB/")
-custom_lib <- "/work/Immunoinformatics/R-packages-RStudio/"
+################################################################################
+## Section 4.0: Set a custom library path (optional)
+custom_lib <- "/work/Immunoinformatics/R-packages-RStudio/" # Change this to your directory
 #custom_lib <- "/work/Immunoinformatics/R-packages-Ubuntu/"
 .libPaths(custom_lib)
 
-# Define the required packages
-cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "duckdb", "DBI", "RSQLite")
-bioc_packages <- c("cleaver", "Biostrings")
 
-# Load all packages
+################################################################################
+## Section 4.1: Load all packages
+cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "duckdb", "DBI", "RSQLite", "plotly")
+bioc_packages <- c("cleaver", "Biostrings", "GenomeInfoDb")
 lapply(c(cran_packages, bioc_packages), require, character.only = TRUE)
 
-#-------------------------------------------------------------------------------
 
+################################################################################
+## Section 4.2: Preparation
 # Read metadata file
 metadata <- fread("OAS_metadata.csv")
 colnames(metadata)
@@ -31,7 +30,7 @@ disease_summary[Disease != "None", Disease_no := paste0("D", seq_len(.N))]
 # Keep Disease_no as "None" for the "None" Disease
 disease_summary[Disease == "None", Disease_no := "None"]
 
-#-------------------------------------------------------------------------------
+
 # Define the working folder and the target folder with the new naming convention
 antibody_folder <- "OAS_full"
 peptide_folder1 <- "OAS_tryptic/Disease_index_ab/"
@@ -81,7 +80,8 @@ error_log <- list()
 # Initialize the output CSV file path for metadata2
 metadata2_file <- file.path("OAS_metadata2.csv")
 
-#-------------------------------------------------------------------------------
+################################################################################
+## Section 4.3: Produce peptide database using duckdb
 # Loop through each disease in disease_summary
 for (disease_no in rev(disease_summary$Disease_no)) {
   
@@ -104,8 +104,9 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   tryptic_file1 <- peptide_files1[grepl(paste0("^", disease_no, "_"), basename(peptide_files1))]
   tryptic_file2 <- peptide_files2[grepl(paste0("^", disease_no, "_"), basename(peptide_files2))]
   
+  
   #-----------------------------------------------------------------------------
-  # Step 1: Read tryptic_file1 and prepare table1 with unique sequences and N_antibody, and Sequence_length
+  # Section 4.3.1: Read tryptic_file1 and prepare table1 with unique Peptides and N_antibody, and Sequence_length, and CDR3
   
   # Read the tryptic data from the file using read_csv_arrow from the arrow package
   tryptic_data1 <- read_csv_arrow(tryptic_file1)
@@ -122,8 +123,9 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   
   # clean memory
   rm(tryptic_data1)
-  #-----------------------------------------------------------------------------
-  # Step 2: Read all antibody files for the related disease to extract CDR3 column
+  
+  
+  # Read all antibody files for the related disease to extract CDR3 column
   CDR3 <- c()
   CDR3 <- unique(unlist(lapply(files_to_process, function(file) {
     tryCatch({
@@ -178,8 +180,11 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   N_peptide_IGHM <- uniqueN(table1$Sequence[table1$Isotype == "IGHM"])
   N_peptide_Bulk <- uniqueN(table1$Sequence[table1$Isotype == "Bulk"])
   
+  
+  
   #-----------------------------------------------------------------------------
-  # Step 3: Read tryptic_file2 and extract Peptides, Filename, Isotype, Btype, Bsource, Patient
+  ## Section 4.3.2: Read tryptic_file2 and extract Peptides, Filename, Isotype, Btype, Bsource, Patient
+  # and join this data to data above (table1)
   tryptic_data2 <- read_csv_arrow(tryptic_file2)
   
   # Subset tryptic_data2 based on table1$Sequence
@@ -209,7 +214,7 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   
   
   #-----------------------------------------------------------------------------
-  # Step 4: Save table1 to duckDB database
+  # Section 4.3.3: Save table1 to duckDB database
   
   # Get the tryptic file name without the .csv.gz extension
   tryptic_file1name <- basename(tryptic_file1)  # Extracts the filename from the path
@@ -225,7 +230,7 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   con <- dbConnect(duckdb::duckdb(), dbdir = db_file)
   
   # Save table1 to the SQLite database
-  dbWriteTable(con, "table1", table1, overwrite = TRUE)
+  dbWriteTable(con, "DATDB", table1, overwrite = TRUE)
   
   # Close the database connection
   dbDisconnect(con)
@@ -239,9 +244,9 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   # Clear table1 from memory
   rm(table1, table2)
   
-  
-  #-----------------------------------------------------------------------------
-  # Step 5: make table2 to store antibody data and save to duckDB database
+
+################################################################################
+## Section 4.4: make table2 to store antibody data and save to duckDB database
   # Process files and combine them into one data table using rbindlist for speed
   table2 <- rbindlist(lapply(files_to_process, function(file) {
     tryCatch({
@@ -272,7 +277,7 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   con <- dbConnect(duckdb::duckdb(), dbdir = db_file)
   
   # Save table2 to the SQLite database
-  dbWriteTable(con, "table2", table2, overwrite = TRUE)
+  dbWriteTable(con, "ABDB", table2, overwrite = TRUE)
   
   # Close the database connection
   dbDisconnect(con)
@@ -285,8 +290,8 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   
   
   
-  #-----------------------------------------------------------------------------
-  # Update metadata2
+################################################################################
+## Section 4.5: Update metadata2
   N_patient <- uniqueN(metadata[metadata$Disease == disease_name, Patient])  # Number of unique patients
   
   # Store the results in a data.table for metadata2
@@ -297,7 +302,7 @@ for (disease_no in rev(disease_summary$Disease_no)) {
     N_peptide = N_peptide,
     N_patient = N_patient,
     max_antibody = max_antibody,
-    max_patient = patient,
+    max_patient = max_patient,
     N_peptide_unique = N_peptide_unique,
     N_peptide_nonunique = N_peptide_nonunique,
     N_peptide_IGHA = N_peptide_IGHA ,
@@ -313,8 +318,8 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   
   
   
-  #-----------------------------------------------------------------------------
-  # Update the list of completed diseases and save progress
+################################################################################
+## Section 4.6:  Update the list of completed diseases and save progress
   completed_diseases_redun <- c(completed_diseases_redun, disease_no)
   write_json(completed_diseases_redun, progress_file1)
   
@@ -323,10 +328,8 @@ for (disease_no in rev(disease_summary$Disease_no)) {
   
 }
 
-
 # Save the error log if there were any errors
 if (length(error_log) > 0) {
   write_json(error_log, file.path(duckdb_folder_pep, "error_log.json"))
 }
-
 # At this point, all diseases have been processed and the corresponding files have been saved in the target folder

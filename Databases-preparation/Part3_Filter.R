@@ -1,15 +1,19 @@
-#-------------------------------------------------------------------------------
-# Set a custom library path
-custom_lib <- "/work/Immunoinformatics/R-packages-RStudio/"
+################################################################################
+## Section 3.0: Set a custom library path (optional)
+custom_lib <- "/work/Immunoinformatics/R-packages-RStudio/" # Change this to your directory
 #custom_lib <- "/work/Immunoinformatics/R-packages-Ubuntu/"
 .libPaths(custom_lib)
 
-# Load all packages
-cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "parallel", "DBI", "RSQLite", "tools")
+
+################################################################################
+## Section 3.1: Load all packages
+cran_packages <- c("arrow", "dplyr", "jsonlite", "seqinr", "data.table", "fs", "stringr", "stringi", "duckdb", "DBI", "RSQLite", "plotly")
 bioc_packages <- c("cleaver", "Biostrings", "GenomeInfoDb")
 lapply(c(cran_packages, bioc_packages), require, character.only = TRUE)
 
+
 ################################################################################
+## Section 3.2: Preparation
 # Define the working folder and the log folder
 working_folder <- "OAS_tryptic"
 log_folder <- "Log_files"
@@ -31,6 +35,7 @@ if (file.exists(progress_file_loop2)) {
 }
 
 ################################################################################
+## Section 3.2.1: Get the list of disease_files
 # Get the list of .csv.gz files in the "Disease" folder within the working folder
 disease_files <- dir_ls(file.path(working_folder, "Disease_index_ab"), glob = "*.csv.gz")
 # Extract the numeric part of the filenames
@@ -39,30 +44,27 @@ disease_files_order <- as.numeric(str_extract(basename(disease_files), "(?<=D)\\
 ordered_indices <- order(disease_files_order, decreasing = TRUE)
 disease_files <- disease_files[ordered_indices]
 
+
+
 ################################################################################
+## Section 3.2.2: Divide data of None_Disease into chunks because this is big data
 # Get the list of .csv.gz files in the "None" folder within the working folder
 disease_none_files <- dir_ls(file.path(working_folder, "None"), glob = "*.csv.gz")
-
 # Calculate the sizes of each "None" file
 disease_none_file_sizes <- file_info(disease_none_files)$size
-
 # Combine filenames with their sizes into a data frame
 file_size_info <- data.frame(file = disease_none_files, size = disease_none_file_sizes)
-
 # Sort the files by size (descending)
 file_size_info <- file_size_info[order(file_size_info$size, decreasing = TRUE), ]
-
 # Initialize chunk list and cumulative size tracker
 disease_none_chunks <- list()
 current_chunk <- list()
 current_chunk_size <- 0
 target_chunk_size <- sum(file_size_info$size) / ceiling(length(file_size_info$file) / 200)  # Adjust 200 based on your system constraints
-
 # Distribute files into chunks with approximately equal total sizes
 for (i in 1:nrow(file_size_info)) {
   file <- file_size_info$file[i]
   file_size <- file_size_info$size[i]
-  
   if (current_chunk_size + file_size > target_chunk_size && length(current_chunk) > 0) {
     # Save the current chunk
     disease_none_chunks <- append(disease_none_chunks, list(current_chunk))
@@ -75,13 +77,12 @@ for (i in 1:nrow(file_size_info)) {
     current_chunk_size <- current_chunk_size + file_size
   }
 }
-
 # Append the last chunk if it has any files
 if (length(current_chunk) > 0) {
   disease_none_chunks <- append(disease_none_chunks, list(current_chunk))
 }
 
-################################################################################
+
 # Process each file in disease_files_to_process
 # Limit the disease_files to the specified range for this machine
 disease_files_to_process <- disease_files
@@ -94,7 +95,7 @@ disease_files_to_process <- disease_files
 
 
 ################################################################################
-# Parent Loop 1: Remove overlapping sequences with selected .RData files
+## Section 3.3: Remove overlapping peptide sequences with other diseases in .RData files
 
 # Load all .RData files in the working folder and store loaded object names
 oas_files <- dir_ls("OAS_tryptic/RData_peptides", glob = "*.RData")
@@ -112,9 +113,7 @@ for (oas_file in oas_files) {
   })
 }
 
-
-
-################################################################################
+# Perform removal of overlapping peptide sequences with selected .RData files
 for (file in disease_files_to_process) {
   # Check if this file has already been processed in Loop 1
   if (basename(file) %in% completed_diseases_loop1) {
@@ -175,7 +174,7 @@ for (file in disease_files_to_process) {
 
 }
 
-################################################################################
+
 # Unload (remove) all objects loaded from .RData files
 for (oas_var_name in names(loaded_objects)) {
   rm(list = loaded_objects[[oas_var_name]], envir = .GlobalEnv)
@@ -196,7 +195,7 @@ gc()
 
 
 ################################################################################
-# Parent Loop 2: Remove overlapping sequences with disease_none files in balanced chunks
+## Section 3.4: Remove overlapping sequences with disease_none files in balanced chunks
 for (file in disease_files_to_process) {
   # Check if this file has already been processed in Loop 2
   if (basename(file) %in% completed_diseases_loop2) {
@@ -215,7 +214,7 @@ for (file in disease_files_to_process) {
   })
   
   for (i in seq_along(disease_none_chunks)) {
-    message(paste("Filtering", basename(file), "by comparing with chunk", i, "of", length(disease_none_chunks), "from none-disease data"))
+    message(paste("   Filtering", basename(file), "by comparing with chunk", i, "of", length(disease_none_chunks), "from none-disease data"))
     
     # Read all files in the current chunk at once with error handling
     none_data_list <- lapply(disease_none_chunks[[i]], function(none_file) {
@@ -257,7 +256,7 @@ for (file in disease_files_to_process) {
   # Remove disease_data to save memory
   rm(disease_data); gc()
   
-  message(paste("Finished Loop 2 for:", basename(file)))
+  message(paste("   Finished Loop 2 for:", basename(file)))
   
 }
 
