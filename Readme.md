@@ -1,4 +1,4 @@
-Data mining antibody sequences for database searching in bottom-up proteomics ================
+# Data mining antibody sequences for database searching in bottom-up proteomics 
 
 ## 0. Introduction
 
