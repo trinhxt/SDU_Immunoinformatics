@@ -1,4 +1,4 @@
-Data mining antibody sequences for database searching in bottom-up proteomics ================
+# Data mining antibody sequences for database searching in bottom-up proteomics 
 
 ## 0. Introduction
 
@@ -13,6 +13,8 @@ Recently, through next-generation sequencing of antibody gene repertoires, it ha
 The workflow below is for creating disease-specific antibody tryptic peptide databases to use in bottom-up proteomics. The workflow contains five steps: **Download**, **Digest**, **Filter**, **Prepare DB** and **Use**. For the first four steps, four R script files were prepared and used for each step, those files are available in `Databases-preparation` directory (`Part1_Download.R`, `Part2_Digestion.R`, `Part3_Filter.R`, `Part4_DB_prep.R`).
 
 Before starting the workflow, we need to install necessary R packages by running the codes in the file `Part0_Install_Packages.R` in the `Databases-preparation` directory.
+
+![Workflow to create databases](Databases-preparation/Workflow.svg)
 
 ## 1. Downloading antibody sequence data
 
