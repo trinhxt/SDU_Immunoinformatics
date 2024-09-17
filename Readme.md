@@ -1,41 +1,34 @@
-Data mining antibody sequences for database searching in bottom-up
-proteomics
-================
+Data mining antibody sequences for database searching in bottom-up proteomics ================
 
 ## 0. Introduction
 
-Bottom-up proteomics approaches rely on database searches that compare
-experimental values of peptides to theoretical values derived from
-protein sequences in a database. While the human body can produce
-millions of distinct antibodies, current databases for human antibodies
-such as UniProtKB are limited to only 1095 sequences (as of 2024
-January). This limitation may hinder the identification of new
-antibodies using bottom-up proteomics. Therefore, extending the
-databases is an important task for discovering new antibodies.
+Human antibodies, vital components of the immune system, are protein molecules composed of two heavy and two light polypeptide chains, interconnected by disulfide bonds. These antibodies play a critical role in immune defense by recognizing and neutralizing pathogens. Identifying disease-specific antibodies is essential for diagnosing infectious diseases, evaluating vaccine effectiveness, and determining an individual's immune status. However, the human body can produce billions of unique antibodies, making their identification in complex biological samples, such as blood plasma, a considerable challenge.
 
-Herein, we adopted extensive collection of antibody sequences from
-[Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/) for
-conducting efficient database searches in publicly available proteomics
-data with a focus on the SARS-CoV-2 disease. Thirty million heavy
-antibody sequences from 146 SARS-CoV-2 patients in the [Observed
-Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/) were *in
-silico* digested to obtain 18 million unique peptides. These peptides
-were then used to create six databases (DB1-DB6) for bottom-up
-proteomics. We used those databases for searching antibody peptides in
-publicly available SARS-CoV-2 human plasma samples in the Proteomics
-Identification Database (PRIDE), and we consistently found new antibody
-peptides in those samples. The database searching task was done by using
-[Fragpipe](https://fragpipe.nesvilab.org/) softwares.
+Mass spectrometry (MS)-based proteomics is a powerful method for identifying and quantifying antibodies. Among the various MS approaches, bottom-up proteomics is especially effective for analyzing thousands of antibodies in complex mixtures. In this method, proteins are enzymatically digested into smaller peptides, typically using the protease trypsin, which are then analyzed via mass spectrometry. These peptides are matched to sequences in standard databases like UniProt or NCBI-RefSeq for identification.
 
-Remaining content of this document is for creating those databases.
+However, a major limitation of this approach is the absence of comprehensive disease-specific antibody databases. Current databases, such as UniProt, include only a fraction of the antibody sequences present in the human body. For instance, as of January 2024, UniProt contains just 38,800 immunoglobulin sequences, far short of the billions of antibodies the human immune system can produce. As a result, relying on such limited databases can lead to under-detection of antibodies, particularly those associated with specific diseases. Expanding antibody databases with disease-specific sequences is crucial for improving the accuracy of MS-based proteomics in identifying antibodies relevant to human health.
+
+Recently, through next-generation sequencing of antibody gene repertoires, it has become possible to obtain billions of antibody sequences (in amino acid format) by annotating, translating, and numbering antibody gene sequences. These large numbers of sequences are now available in public databases such as the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/). We hypothesize that using these theoretical antibody sequences as new databases for bottom-up proteomics could address the current lack of antibody coverage in standard databases.
+
+The workflow below is for creating disease-specific antibody tryptic peptide databases to use in bottom-up proteomics. The workflow contains five steps: **Download**, **Digest**, **Filter**, **Prepare DB** and **Use**. For the first four steps, four R script files were prepared and used for each step, those files are available in `Databases-preparation` directory (`Part1_Download.R`, `Part2_Digestion.R`, `Part3_Filter.R`, `Part4_DB_prep.R`).
+
+Before starting the workflow, we need to install necessary R packages by running the codes in the file `Part0_Install_Packages.R` in the `Databases-preparation` directory.
+
+## ![](images/Picture1-01.png){width="500"}
 
 ## 1. Downloading antibody sequence data
 
-The antibody sequences (heavy chains) were downloaded from The Observed
-Antibody Space database
-([OAS](https://opig.stats.ox.ac.uk/webapps/oas/oas_unpaired/)). In this
-study, we focus on antibodies of SARS-CoV-2, so we choose keywords as
-below:
+Firstly, human antibody sequences are downloaded from [Observed Antibody Space webpage](https://opig.stats.ox.ac.uk/webapps/oas/). Go to the website, choose **Unpaired Sequences**. In the box **Search OAS sequences by attribute**, choose Species: **human**, Chain: **heavy**, and click **Search**. Heavy chain is capable of generating much more junctional and combinatorial diversity than the light chain and is the major contributor to antigen binding [(Tizard 2023)](http://dx.doi.org/10.1016/B978-0-323-95219-4.00013-7). Therefore, heavy chains in unpaired sequences were focused. The search will yield **1,891,061,809** unique sequences from **69** studies as of September 2024. A shell-script with the commands to download all the antibody data files in this search will be available for download, this file is `bulk_dow`nl`oad.sh`.
+
+After getting the `bulk_dow`nl`oad.sh` file, we open the `Part1_Download.R` file and run R codes in it. This file will use links in `bulk_download.sh` file to download antibody data and their metadata. After finish running codes in this file, a metadata file named `OAS_metadata.csv` and a directory `OAS_full` containing 13,265 `csv.gz` files of antibody will be obtained. Each file in `OAS_full` directory is a data table with columns: `sequence_alignment_aa`, `v_call`, `d_call`, `j_call`, `cdr1_aa`, `cdr2_aa`, `cdr3_aa`, where `sequence_alignment_aa` is antibody sequence in amino acid format, `v_call`, `d_call`, `j_call` are V call, D call and J call of antibody, `cdr1_aa`, `cdr2_aa`, `cdr3_aa` are peptide sequences in amino acid format of CD1, 2, 3 regions of the antibody.
+
+ndefinedwe need to prepare 3`files: bulk_dow`nl`oad.sh, NCBI_RefSeq_Human_2024_07_`25.fas`ta, and UniProt_TR_S`P_Human\_`2024_07_25.fasta`. For downloading The `bulk_download.sh` file was obtained from [Observed Antibody Space webpage](https://opig.stats.ox.ac.uk/webapps/oas/).
+
+Herein, we adopted extensive collection of antibody sequences from [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/) for conducting efficient database searches in publicly available proteomics data with a focus on the SARS-CoV-2 disease. Thirty million heavy antibody sequences from 146 SARS-CoV-2 patients in the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/) were *in silico* digested to obtain 18 million unique peptides. These peptides were then used to create six databases (DB1-DB6) for bottom-up proteomics. We used those databases for searching antibody peptides in publicly available SARS-CoV-2 human plasma samples in the Proteomics Identification Database (PRIDE), and we consistently found new antibody peptides in those samples. The database searching task was done by using [Fragpipe](https://fragpipe.nesvilab.org/) softwares.
+
+Remaining content of this document is for creating those databases.
+
+The antibody sequences (heavy chains) were downloaded from The Observed Antibody Space database ([OAS](https://opig.stats.ox.ac.uk/webapps/oas/oas_unpaired/)). In this study, we focus on antibodies of SARS-CoV-2, so we choose keywords as below:
 
 | Keyword      | Note                                                                             | Value      |
 |--------------|----------------------------------------------------------------------------------|------------|
@@ -52,19 +45,9 @@ below:
 
 **Table 1**. Keywords search in OAS database for SARS-CoV-2.
 
-After choosing keywords and clicking Search button, the website will
-give us results: *Your search yielded 30,966,193 unique sequences from 9
-studies… A shell-script with the commands to download all the data-units
-in this subset of OAS can be downloaded
-[here](blob:https://opig.stats.ox.ac.uk/e3480b42-4861-49e6-9b5d-e1852b32baa1).*
-We downloaded the shell-script file (`bulk_download.sh`) and saved it to
-the directory `Part1-Download-data`.
+After choosing keywords and clicking Search button, the website will give us results: *Your search yielded 30,966,193 unique sequences from 9 studies… A shell-script with the commands to download all the data-units in this subset of OAS can be downloaded [here](blob:https://opig.stats.ox.ac.uk/e3480b42-4861-49e6-9b5d-e1852b32baa1).* We downloaded the shell-script file (`bulk_download.sh`) and saved it to the directory `Part1-Download-data`.
 
-In order to download all data files, we use terminal (in Mac and Linux,
-in Windows we can use terminal of [WSL - Windows Subsystem for
-Linux](https://learn.microsoft.com/en-us/windows/wsl/)), navigate the
-terminal to where the `bulk_download.sh` file was saved and run the
-command:
+In order to download all data files, we use terminal (in Mac and Linux, in Windows we can use terminal of [WSL - Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/)), navigate the terminal to where the `bulk_download.sh` file was saved and run the command:
 
 ``` bash
 bash bulk_download.sh
@@ -74,25 +57,11 @@ There are total 990 data file and the size of all data is 13 GB.
 
 ## 2. Read antibody sequences data
 
-In this part, we will read the downloaded data (`csv` format) and save
-it as `fasta` format (for later *in silico* digestion) and `feather`
-format (for later load and use). Full R code and metadata file for this
-part are saved in the folder `Part2-Read-csv-data` of this Github
-repository.
+In this part, we will read the downloaded data (`csv` format) and save it as `fasta` format (for later *in silico* digestion) and `feather` format (for later load and use). Full R code and metadata file for this part are saved in the folder `Part2-Read-csv-data` of this Github repository.
 
-We will read 990 data files (`csv` format )with the size of 13GB. This
-task requires at least 32GB of RAM by using `fread` function of the
-`data.table` package. For computers with less than 32GB of RAM, we
-recommend to use `diskframe` package as below (the data will be read
-from and saved to the hard disk, bypassing storage in RAM to prevent
-overloading the computer’s memory). After reading the whole `csv` data,
-we save it as feather format (feather format is designed to make reading
-and writing big data frames efficient).
+We will read 990 data files (`csv` format )with the size of 13GB. This task requires at least 32GB of RAM by using `fread` function of the `data.table` package. For computers with less than 32GB of RAM, we recommend to use `diskframe` package as below (the data will be read from and saved to the hard disk, bypassing storage in RAM to prevent overloading the computer’s memory). After reading the whole `csv` data, we save it as feather format (feather format is designed to make reading and writing big data frames efficient).
 
-After running the below code, we obtain a feather file containing
-30,966,193 antibody sequences, the file is named as
-`OAS-SARS-COV2_Antibodies_2023-05-15.feather` and available at
-[Zenodo](https://doi.org/10.5281/zenodo.10566370).
+After running the below code, we obtain a feather file containing 30,966,193 antibody sequences, the file is named as `OAS-SARS-COV2_Antibodies_2023-05-15.feather` and available at [Zenodo](https://doi.org/10.5281/zenodo.10566370).
 
 ``` r
 library(svDialogs)
@@ -180,9 +149,7 @@ Datatable$v_call <- gsub("\\*.*","", Datatable$v_call)
 write_feather(Datatable, paste(tempFolder,"/OAS-SARS-COV2_Antibodies_", Sys.Date(), ".feather", sep = ""))
 ```
 
-Save antibody sequences to `fasta` format (the `fasta` file that authors
-made is named as `OAS-SARS-COV2_Antibodies_2023-05-15.fasta` and
-available at [Zenodo](https://doi.org/10.5281/zenodo.10566370)):
+Save antibody sequences to `fasta` format (the `fasta` file that authors made is named as `OAS-SARS-COV2_Antibodies_2023-05-15.fasta` and available at [Zenodo](https://doi.org/10.5281/zenodo.10566370)):
 
 ``` r
 # Save antibody sequences to fasta file
@@ -206,26 +173,11 @@ write.fasta(Sequences,   # sequences
 
 ## 3. *In silico* digestion of antibody sequences
 
-We use [Protein Digestion
-Simulator](https://github.com/PNNL-Comp-Mass-Spec/Protein-Digestion-Simulator)
-software for *in silico* digestion of antibody sequences. Input file for
-*in silico* digestion is the `fasta` file that we obtained above. The
-digestion settings were: fully tryptic (KR not P), max missed cleavages
-of 0, minimum fragment mass of 400, and maximum fragment mass of 6000.
-After the digestion of 30,966,193 antibody sequences, we obtain a text
-file of 18,419,969 distinct trypic peptides. The digestion of 42,421
-protein sequences of UniProt gave 691,027 distinct peptides.
+We use [Protein Digestion Simulator](https://github.com/PNNL-Comp-Mass-Spec/Protein-Digestion-Simulator) software for *in silico* digestion of antibody sequences. Input file for *in silico* digestion is the `fasta` file that we obtained above. The digestion settings were: fully tryptic (KR not P), max missed cleavages of 0, minimum fragment mass of 400, and maximum fragment mass of 6000. After the digestion of 30,966,193 antibody sequences, we obtain a text file of 18,419,969 distinct trypic peptides. The digestion of 42,421 protein sequences of UniProt gave 691,027 distinct peptides.
 
 ## 4. Filtering peptides
 
-In this part, we read the file containing digested peptides above
-(`OAS-SARS-COV2_digested_2023-05-15.txt`) and filter remove peptides
-which are duplicated with petides in UniProt database. The `txt` file is
-big data (20GB), so we use `diskframe` package to read and extract data
-from it. After this step, we obtain a `feather` file containing OAS
-antibody peptides
-(`OAS-SARS-COV2_peptides_non-UniProt_2023-05-16.feather` which is
-available at [Zenodo](https://doi.org/10.5281/zenodo.10566370)).
+In this part, we read the file containing digested peptides above (`OAS-SARS-COV2_digested_2023-05-15.txt`) and filter remove peptides which are duplicated with petides in UniProt database. The `txt` file is big data (20GB), so we use `diskframe` package to read and extract data from it. After this step, we obtain a `feather` file containing OAS antibody peptides (`OAS-SARS-COV2_peptides_non-UniProt_2023-05-16.feather` which is available at [Zenodo](https://doi.org/10.5281/zenodo.10566370)).
 
 ``` r
 library(svDialogs)
@@ -312,9 +264,7 @@ write_feather(OAS1, paste("OAS-SARS-COV2_peptides_non-UniProt_", Sys.Date(), ".f
 
 ## 5. Creating databases for bottom-up proteomics
 
-Run the below codes for creating 6 databases (DB1-6) for later use in
-bottom-up proteomics. We made those database available at
-[Zenodo](https://doi.org/10.5281/zenodo.10566370).
+Run the below codes for creating 6 databases (DB1-6) for later use in bottom-up proteomics. We made those database available at [Zenodo](https://doi.org/10.5281/zenodo.10566370).
 
 ``` r
 library(svDialogs)
