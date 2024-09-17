@@ -1,4 +1,4 @@
-# Data mining antibody sequences for database searching in bottom-up proteomics 
+# Data mining antibody sequences for database searching in bottom-up proteomics
 
 ## 0. Introduction
 
@@ -14,7 +14,7 @@ The workflow below is for creating disease-specific antibody tryptic peptide dat
 
 Before starting the workflow, we need to install necessary R packages by running the codes in the file `Part0_Install_Packages.R` in the `Databases-preparation` directory.
 
-![Workflow to create databases](Databases-preparation/Workflow.svg)
+![Workflow to create databases](Databases-preparation/Workflow.png)
 
 ## 1. Downloading antibody sequence data
 
@@ -31,7 +31,7 @@ Remaining content of this document is for creating those databases.
 The antibody sequences (heavy chains) were downloaded from The Observed Antibody Space database ([OAS](https://opig.stats.ox.ac.uk/webapps/oas/oas_unpaired/)). In this study, we focus on antibodies of SARS-CoV-2, so we choose keywords as below:
 
 | Keyword      | Note                                                                             | Value      |
-|-------------|-----------------------------------------------|-------------|
+|---------------|------------------------------------------|---------------|
 | Species      | Species being sequenced                                                          | human      |
 | BSource      | Organ or tissue from where the B-cells were collected                            | PBMC       |
 | BType        | Type of B-cells                                                                  | \*         |
