@@ -1,19 +1,19 @@
 library(shiny)
 library(shinythemes)  
 library(DBI)
-library(RSQLite)
 library(DT)
 library(shinyBS)  # For modals and tooltips
 library(shinyWidgets)  # For actionBttn
 library(data.table)
 library(shinyjs)  # Include the shinyjs package
-library(seqinr)
 library(RColorBrewer)
 library(plotly)
-library(dplyr)
-library(tidyr)
 library(duckdb)
 library(shinyBS)
+library(Biostrings)
+library(dplyr)
+library(tidyr)
+
 
 ui <- fluidPage(
   shinyjs::useShinyjs(),  
@@ -83,10 +83,10 @@ ui <- fluidPage(
                       fluidPage(
                         tags$div(
                           p(strong("Welcome to DAT-DB app!")),
-                          p("The identification of human antibodies using bottom-up proteomics relies on 
-               database searches that match experimental peptide fragments to theoretical values derived from protein sequences. 
-               Standard protein databases, such as UniProt and NCBI-RefSeq, contain limited antibody sequences compared to the human body’s capacity to generate billions. 
-               To overcome this limitation, the DAT-BB app provides researchers with antibody tryptic peptides derived from next-generation sequencing of antibody repertoires."),
+                          p("The identification of human antibodies using bottom-up proteomics relies on database searches that match experimental peptide fragments to theoretical values derived from protein sequences in databases. 
+                            Standard protein databases, such as UniProt and NCBI-RefSeq, contain a limited number of antibody sequences compared to the human body’s capacity to generate billions and currently lack disease-specific antibody sequences. 
+                            This limitation could lead to the misidentification of antibodies in samples. 
+                            To overcome this challenge, DAT-DB, a database of disease-specific antibodies, provides researchers with antibody tryptic peptides derived from next-generation sequencing of antibody repertoires."),
                           p(strong("Author: Xuan-Tung Trinh (txt@bmb.sdu.dk)")),
                           
                           # Add buttons for toggling images and plot, left-aligned with spacing
@@ -96,7 +96,7 @@ ui <- fluidPage(
                                      style = "display: flex; justify-content: flex-start; align-items: flex-start; gap: 20px;",  # Left-align and add space between buttons
                                      
                                      # First button
-                                     actionButton("toggle_image1", "Why need DAT-DB?", style = "width: 200px; height: 50px; border-radius: 50px; opacity: 0.75"),  # Set button size
+                                     actionButton("toggle_image1", "What is DAT-DB?", style = "width: 200px; height: 50px; border-radius: 50px; opacity: 0.75"),  # Set button size
                                      
                                      # Second button
                                      actionButton("toggle_image2", "How was DAT-DB created?", style = "width: 200px; height: 50px; border-radius: 50px; opacity: 0.75"),  # Set button size
@@ -116,8 +116,8 @@ ui <- fluidPage(
                                    tags$div(
                                      id = "image1_container",  # Add an ID for toggling
                                      style = "text-align: center; padding: 15px; height: auto; display: none;",  # Initially hidden
-                                     tags$h3("Why need DAT-DB?", style = "font-weight: bold;"),  # Title for Image1
-                                     img(src = "Image1.png", style = "max-width: 700px; width: 100%; height: auto;")  # Display Image1
+                                     tags$h3("What is DAT-DB?", style = "font-weight: bold;"),  # Title for Image1
+                                     img(src = "Image1.svg", style = "max-width: 700px; width: 100%; height: auto;")  # Display Image1
                                    )
                             )
                           ),
@@ -148,7 +148,7 @@ ui <- fluidPage(
                                      ),
                                      
                                      # Display Image2
-                                     img(src = "Image2.png", style = "max-width: 600px; width: 100%; height: auto;")
+                                     img(src = "Image2.svg", style = "max-width: 600px; width: 100%; height: auto;")
                                    )
                             )
                           ),
@@ -193,7 +193,7 @@ ui <- fluidPage(
                                      id = "image3_container",  # Add an ID for toggling
                                      style = "text-align: center; padding: 15px; height: auto; display: none;",  # Initially hidden
                                      tags$h3("What does DAT-DB give?", style = "font-weight: bold;"),  # Title for Image3
-                                     img(src = "Image3.png", style = "max-width: 900px; width: 100%; height: auto;")  # Display Image3
+                                     img(src = "Image3.svg", style = "max-width: 900px; width: 100%; height: auto;")  # Display Image3
                                    )
                             )
                           )
@@ -289,12 +289,24 @@ ui <- fluidPage(
                                      shinyjs::hidden(uiOutput("filteredSummary")),  # Filtered summary remains outside the pie chart row
                                      
                                      # Download buttons next to summary
-                                     div(class = "button-container", 
-                                         shinyjs::hidden(downloadButton("downloadDataCSV", "Download as CSV")), 
-                                         shinyjs::hidden(downloadButton("downloadDataFASTA", "Download as FASTA"))
+                                     fluidRow(
+                                       div(class = "button-container",
+                                           column(2, shinyjs::hidden(downloadButton("downloadDataCSV", "Download CSV"))),
+                                           column(2, shinyjs::hidden(downloadButton("downloadDataFASTA", "Download FASTA"))),
+                                           
+                                           # Button for downloadDataFASTAdecoy and info button next to it
+                                           column(3,
+                                                  div(
+                                                    class = "input-with-button",
+                                                    shinyjs::hidden(downloadButton("downloadDataFASTAdecoy", "Download FASTA with decoys")),
+                                                    actionBttn("info_fasta_decoy", label = NULL, icon = icon("info-circle"), style = "pill", color = "primary", size = "xs")
+                                                  )
+                                           )
+                                       )
                                      )
                                  )
                           )
+                          
                         )
                       )
              )
