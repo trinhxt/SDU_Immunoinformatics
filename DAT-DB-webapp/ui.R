@@ -294,12 +294,12 @@ ui <- fluidPage(
                                            column(2, shinyjs::hidden(downloadButton("downloadDataCSV", "Download CSV"))),
                                            column(2, shinyjs::hidden(downloadButton("downloadDataFASTA", "Download FASTA"))),
                                            
-                                           # Button for downloadDataFASTAdecoy and info button next to it
+                                           # Button for downloadDataFASTAplus and info button next to it
                                            column(3,
                                                   div(
                                                     class = "input-with-button",
-                                                    shinyjs::hidden(downloadButton("downloadDataFASTAdecoy", "Download FASTA with decoys")),
-                                                    actionBttn("info_fasta_decoy", label = NULL, icon = icon("info-circle"), style = "pill", color = "primary", size = "xs")
+                                                    shinyjs::hidden(downloadButton("downloadDataFASTAplus", "Download FASTA+")),
+                                                    actionBttn("info_fasta_plus", label = NULL, icon = icon("info-circle"), style = "pill", color = "primary", size = "xs")
                                                   )
                                            )
                                        )

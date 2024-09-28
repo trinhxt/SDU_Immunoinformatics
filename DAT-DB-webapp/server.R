@@ -74,24 +74,26 @@ server <- function(input, output, session) {
     # Initially hide download buttons and outputs
     shinyjs::hide("downloadDataCSV")
     shinyjs::hide("downloadDataFASTA")
-    shinyjs::hide("downloadDataFASTAdecoy")
+    shinyjs::hide("downloadDataFASTAplus")
     shinyjs::hide("filteredSummary")
     shinyjs::hide("piechart2")
     shinyjs::hide("piechart1")
-    shinyjs::hide("info_fasta_decoy")
+    shinyjs::hide("info_fasta_plus")
   })
   
+  # Define a global reactive value for filteredData
+  filteredData <- reactiveVal(NULL)
   
   # Load the selected database and store the connection
   observeEvent(input$disease, {
     if (input$disease == "None") {
       shinyjs::hide("downloadDataCSV")
       shinyjs::hide("downloadDataFASTA")
-      shinyjs::hide("downloadDataFASTAdecoy")
+      shinyjs::hide("downloadDataFASTAplus")
       shinyjs::hide("filteredSummary")
       shinyjs::hide("piechart2")
       shinyjs::hide("piechart1")
-      shinyjs::hide("info_fasta_decoy")
+      shinyjs::hide("info_fasta_plus")
       
       # Clear the database connection and reset filteredData
       if (!is.null(con)) {
@@ -162,8 +164,8 @@ server <- function(input, output, session) {
       shinyjs::show("piechart1")
       shinyjs::show("downloadDataCSV") # Show download buttons when a disease is selected
       shinyjs::show("downloadDataFASTA")  # Show download buttons when a disease is selected
-      shinyjs::show("downloadDataFASTAdecoy")
-      shinyjs::show("info_fasta_decoy")
+      shinyjs::show("downloadDataFASTAplus")
+      shinyjs::show("info_fasta_plus")
       gc()
       
       
@@ -459,6 +461,122 @@ server <- function(input, output, session) {
       
       # clean memory
       gc()
+      
+      
+      # Download handler for downloading the filtered data as CSV
+      output$downloadDataCSV <- downloadHandler(
+        filename = function() {
+          paste(input$disease, "_filtered_", Sys.Date(), ".csv", sep = "")
+        },
+        content = function(file) {
+          data <- filteredData()
+          fwrite(data, file)
+        }
+      )
+      
+      # Download handler for downloading the filtered data as FASTA using `Biostrings::writeXStringSet`
+      output$downloadDataFASTA <- downloadHandler(
+        filename = function() {
+          paste(input$disease, "_", Sys.Date(), ".fasta", sep = "")
+        },
+        content = function(file) {
+          # Start progress bar
+          withProgress(message = "Preparing FASTA file...", value = 0, {
+            
+            # Simulate progress (this is optional; adjust depending on your app's speed)
+            incProgress(0.2, detail = "Filtering data...")
+            
+            # Get the filtered data
+            data <- filteredData()
+            
+            # Simulate progress
+            incProgress(0.4, detail = "Creating sequences...")
+            
+            # Create headers in OAS/UniProt-like format
+            headers <- paste("OAS", paste0("pep_", seq_len(nrow(data))), 
+                             input$disease, data$BSource, data$BType, data$Isotype, 
+                             paste0("Nab_", data$N_antibody), sep = "|")
+            
+            # Create AAStringSet object (for protein sequences)
+            fasta_data <- AAStringSet(data$Sequence)
+            
+            # Assign headers to the sequence names
+            names(fasta_data) <- headers
+            
+            # Simulate progress
+            incProgress(0.6, detail = "Writing FASTA file...")
+            
+            # Write the FASTA file using Biostrings
+            writeXStringSet(fasta_data, filepath = file, format = "fasta")
+            
+            # Clean up memory
+            rm(data, headers,fasta_data)
+            gc()  # Trigger garbage collection to free up memory
+            
+            # Complete progress
+            incProgress(1, detail = "Done.")
+          })
+        }
+      )
+      
+      
+      # Download handler for downloading the filtered data as FASTA with decoy sequences
+      output$downloadDataFASTAplus <- downloadHandler(
+        filename = function() {
+          paste(input$disease, "_plus_", Sys.Date(), ".fasta", sep = "")
+        },
+        content = function(file) {
+          # Start progress bar
+          withProgress(message = "Preparing FASTA file...", value = 0, {
+            
+            # Simulate progress (optional)
+            incProgress(0.2, detail = "Filtering data...")
+            
+            # Get the filtered data
+            data <- filteredData()
+            
+            # Simulate progress
+            incProgress(0.4, detail = "Creating sequences...")
+            
+            # Create headers in OAS/UniProt-like format for original sequences
+            headers <- paste("OAS", paste0("pep_", seq_len(nrow(data))), 
+                             input$disease, data$BSource, data$BType, data$Isotype, 
+                             paste0("Nab_", data$N_antibody), sep = "|")
+            
+            # Create AAStringSet object for original sequences (for protein sequences)
+            fasta_data <- AAStringSet(data$Sequence)
+            
+            # Assign headers to the sequence names
+            names(fasta_data) <- headers
+            
+            # Simulate progress
+            incProgress(0.6, detail = "Writing FASTA file...")
+            
+            # Write the combined sequences to a temporary FASTA file
+            temp_fasta <- tempfile(fileext = ".fasta")
+            writeXStringSet(fasta_data, filepath = temp_fasta, format = "fasta")
+            
+            # Append decoy files to the temp_fasta
+            file.append(temp_fasta, "protDB/UniProt_SP_Human_2024_09_19.fasta")
+            file.append(temp_fasta, "protDB/cRAP.fasta")
+            
+            # Copy the combined FASTA file to the final output location
+            file.copy(temp_fasta, file, overwrite = TRUE)
+            
+            # Clean up temporary file
+            unlink(temp_fasta)
+            
+            # Clean up memory
+            rm(data, fasta_data, headers)
+            gc()  # Trigger garbage collection to free up memory
+            
+            # Complete progress
+            incProgress(1, detail = "Done.")
+          })
+        }
+      )
+      
+      
       # Complete progress bar
       incProgress(1, detail = "Complete")
     })
@@ -503,131 +621,6 @@ server <- function(input, output, session) {
   
   
   
-  # Download handler for downloading the filtered data as CSV
-  output$downloadDataCSV <- downloadHandler(
-    filename = function() {
-      paste(input$disease, "_filtered_", Sys.Date(), ".csv", sep = "")
-    },
-    content = function(file) {
-      data <- filteredData()
-      fwrite(data, file)
-    }
-  )
-  
-  # Download handler for downloading the filtered data as FASTA using `Biostrings::writeXStringSet`
-  output$downloadDataFASTA <- downloadHandler(
-    filename = function() {
-      paste(input$disease, "_", Sys.Date(), ".fasta", sep = "")
-    },
-    content = function(file) {
-      # Start progress bar
-      withProgress(message = "Preparing FASTA file...", value = 0, {
-        
-        # Simulate progress (this is optional; adjust depending on your app's speed)
-        incProgress(0.2, detail = "Filtering data...")
-        
-        # Get the filtered data
-        data <- filteredData()
-        
-        # Simulate progress
-        incProgress(0.4, detail = "Creating sequences...")
-        
-        # Create headers in OAS/UniProt-like format
-        headers <- paste("OAS", input$disease, data$BSource, data$BType, data$Isotype, 
-                         paste0("Nab_", data$N_antibody), sep = "|")
-        
-        # Create AAStringSet object (for protein sequences)
-        fasta_data <- AAStringSet(data$Sequence)
-        
-        # Assign headers to the sequence names
-        names(fasta_data) <- headers
-        
-        # Simulate progress
-        incProgress(0.6, detail = "Writing FASTA file...")
-        
-        # Write the FASTA file using Biostrings
-        writeXStringSet(fasta_data, filepath = file, format = "fasta")
-        
-        # Clean up memory
-        rm(data, headers,fasta_data)
-        gc()  # Trigger garbage collection to free up memory
-        
-        # Complete progress
-        incProgress(1, detail = "Done.")
-      })
-    }
-  )
-  
-  
-  # Download handler for downloading the filtered data as FASTA with decoy sequences
-  output$downloadDataFASTAdecoy <- downloadHandler(
-    filename = function() {
-      paste(input$disease, "_with_decoys_", Sys.Date(), ".fasta", sep = "")
-    },
-    content = function(file) {
-      # Start progress bar
-      withProgress(message = "Preparing FASTA file...", value = 0, {
-        
-        # Simulate progress (optional)
-        incProgress(0.2, detail = "Filtering data...")
-        
-        # Get the filtered data
-        data <- filteredData()
-        
-        # Simulate progress
-        incProgress(0.4, detail = "Creating sequences...")
-        
-        # Create headers in OAS/UniProt-like format for original sequences
-        headers <- paste("OAS", input$disease, data$BSource, data$BType, data$Isotype, 
-                         paste0("Nab_", data$N_antibody), sep = "|")
-        
-        # Create AAStringSet object for original sequences (for protein sequences)
-        fasta_data <- AAStringSet(data$Sequence)
-        
-        # Create reversed sequences
-        reversed_sequences <- reverse(fasta_data)
-        
-        # Create headers for reversed sequences, prefixed with "rev_"
-        reversed_headers <- paste("rev_OAS", input$disease, data$BSource, data$BType, data$Isotype, 
-                                  paste0("Nab_", data$N_antibody), sep = "|")
-        
-        # Combine original and reversed sequences
-        all_sequences <- c(fasta_data, reversed_sequences)
-        all_headers <- c(headers, reversed_headers)
-        
-        # Assign headers to the sequence names
-        names(all_sequences) <- all_headers
-        
-        # Simulate progress
-        incProgress(0.6, detail = "Writing FASTA file...")
-        
-        # Write the combined sequences to a temporary FASTA file
-        temp_fasta <- tempfile(fileext = ".fasta")
-        writeXStringSet(all_sequences, filepath = temp_fasta, format = "fasta")
-        
-        # Append decoy files to the temp_fasta
-        file.append(temp_fasta, "protDB/decoy_UniProt_SP_Human_2024_09_19.fasta")
-        file.append(temp_fasta, "protDB/decoy_cRAP.fasta")
-        
-        # Copy the combined FASTA file to the final output location
-        file.copy(temp_fasta, file, overwrite = TRUE)
-        
-        # Clean up temporary file
-        unlink(temp_fasta)
-        
-        # Clean up memory
-        rm(data, fasta_data, reversed_sequences, all_sequences, headers, reversed_headers)
-        gc()  # Trigger garbage collection to free up memory
-        
-        # Complete progress
-        incProgress(1, detail = "Done.")
-      })
-    }
-  )
-  
-  
-  
-  
   # Info messages using sendSweetAlert
   observeEvent(input$info_antibody, {
     sendSweetAlert(
@@ -667,11 +660,11 @@ server <- function(input, output, session) {
   })
   
   # Server logic for sendSweetAlert
-  observeEvent(input$info_fasta_decoy, {
+  observeEvent(input$info_fasta_plus, {
     sendSweetAlert(
       session = session,
-      title = "Download FASTA with decoys",
-      text = "This option will add reversed sequences as decoys with the prefix 'rev_' to the sequence names. It will also add contaminants (cRAP database from The Global Proteome Machine) and UniProt proteins (human, reviewed, with isoforms, date: 19/09/2024) to the peptide data.",
+      title = "Download FASTA plus",
+      text = "This option will add UniProt proteins (human, reviewed, with isoforms, date: 19/09/2024) and contaminants (cRAP database from The Global Proteome Machine) to the peptide data.",
       type = "info"
     )
   })
