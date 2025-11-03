@@ -1,0 +1,25 @@
+No,Disease_no,File_db,Disease,N_antibody,N_peptide,N_patient,max_antibody,max_patient
+1,D1,D1_SARS_COV_2.duckdb,SARS-CoV-2,80877491,105985281,180,60505,28
+2,D2,D2_HIV.duckdb,HIV,55652205,70937250,38,160691,8
+3,D3,D3_CMV_EBV.duckdb,CMV-EBV,21429162,30298896,3,32571,3
+4,D4,D4_Celiac.duckdb,Celiac,13519621,16090544,100,1560,17
+5,D5,D5_Allergy_NoSIT.duckdb,Allergy-NoSIT,12574661,19401942,14,11470,7
+6,D6,D6_Ebola.duckdb,Ebola,11791392,11109519,4,30660,4
+7,D7,D7_MS.duckdb,MS,9563210,15603996,13,119488,8
+8,D8,D8_SLE.duckdb,SLE,8982520,9127481,7,9113,7
+9,D9,D9_Tonsillitis.duckdb,Tonsillitis,6333401,9771896,4,2972,4
+10,D10,D10_Obstructive_Sleep_Apnea.duckdb,Obstructive Sleep Apnea,3730368,5633255,2,2162,2
+11,D11,D11_Tonsillitis_Obstructive_Sleep_Apnea.duckdb,Tonsillitis Obstructive Sleep Apnea,3572416,4976734,2,1065,2
+12,D12,D12_Asthma.duckdb,Asthma,2906089,2250206,1,83928,1
+13,D13,D13_EBV.duckdb,EBV,2842477,7116740,1,2501,1
+14,D14,D14_HCV.duckdb,HCV,1062965,3337904,31,10038,11
+15,D15,D15_AChR_MG.duckdb,AChR-MG,812076,1477681,4,840,3
+16,D16,D16_Light_Chain_Amyloidosis.duckdb,Light Chain Amyloidosis,722834,1293123,21,19507,16
+17,D17,D17_MuSK_MG.duckdb,MuSK-MG,596400,1139359,6,644,3
+18,D18,D18_CMV.duckdb,CMV,463353,1080599,1,43,1
+19,D19,D19_Allergy_SIT.duckdb,Allergy-SIT,405584,873374,8,201,4
+20,D20,D20_Dengue.duckdb,Dengue,282337,507431,45,241,35
+21,D21,D21_CLL.duckdb,CLL,15411,32048,11,249,2
+22,D22,D22_Allergic_Rhinitis_In_Season.duckdb,Allergic Rhinitis In Season,12058,35310,4,140,3
+23,D23,D23_Non_Dengue_Febrile_Illness.duckdb,Non Dengue Febrile Illness,8382,13261,7,8,1
+24,D24,D24_Allergic_Rhinitis_Out_Of_Season.duckdb,Allergic Rhinitis Out Of Season,7303,21951,3,23,2
