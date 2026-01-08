@@ -1,0 +1,13 @@
+oas_download_script: "bulk_download.sh"
+oas_raw_dir: "D:/OAS/raw_download"          # optional staging
+oas_processed_dir: "D:/OAS/OAS_human_heavychain"
+metadata_csv: "D:/OAS/OAS_metadata.csv"
+
+work_root: "D:/OAS/OAS_human_heavychain_disease_tryptic"
+final_part2_dir: "D:/OAS/OAS_human_heavychain_disease_tryptic/parquet_db_partitioned/final"
+
+part3_root: "D:/OAS/OAS_human_heavychain_disease_tryptic/Disease_presence"
+part4_root: "D:/OAS/OAS_human_heavychain_disease_tryptic/Peptide_uniqueness"
+part5_root: "D:/OAS/OAS_human_heavychain_disease_tryptic/CDR3_check"
+
+zenodo_out_root: "D:/OAS/PeptideDB"

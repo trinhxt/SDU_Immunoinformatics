@@ -1,0 +1,6 @@
+source("scripts/01_part1_download.R")
+source("scripts/02_part2_digestion.R")
+source("scripts/03_part3_disease_presence.R")
+source("scripts/04_part4_peptide_uniqueness.R")
+source("scripts/05_part5_cdr3.R")
+source("scripts/06_part6_zenodo_bundle.R")

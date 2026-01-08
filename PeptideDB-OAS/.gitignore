@@ -1,0 +1,27 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+
+# renv
+renv/library/
+renv/python/
+renv/staging/
+
+# big outputs / databases
+*.parquet
+*.duckdb
+duckdb_temp*/
+*_temp*/
+*_tmp*/
+
+# data folders (customize to your actual locations if inside repo)
+OAS_human_heavychain/
+OAS_metadata.csv
+PeptideDB/
+
+# local configs
+config/paths.yml
