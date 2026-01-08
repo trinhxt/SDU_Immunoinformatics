@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software or dataset, please cite it."
+title: "PeptideDB-OAS: Reproducible pipeline for building a peptide-level antibody database from OAS"
+type: software
+authors:
+  - family-names: "Trinh"
+    given-names: "Xuan-Tung"
+repository-code: "https://github.com/trinhxt/SDU_Immunoinformatics"
+license: "MIT"
