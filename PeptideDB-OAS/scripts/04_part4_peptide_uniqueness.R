@@ -1,145 +1,172 @@
-# Part4_Peptide_uniqueness.R
-# Goal: For each Peptide, count how many DISTINCT Antibodies it appears in.
-# Output: partitioned parquet (by bucket) with columns:
-#   Peptide, bucket, n_distinct_antibodies
+################################################################################
+## scripts/04_part4_peptide_uniqueness.R
+##
+## Part4: Peptide uniqueness
+## Goal: For each Peptide, count how many DISTINCT Antibodies it appears in.
+##
+## Uses config/paths.yml (via helpers_paths.R):
+##   - P$final_part2_dir : final Parquet dataset from Part2
+##   - P$part4_root      : output root for Part4
+##
+## Outputs (under P$part4_root):
+##   - base_distinct/peptide_antibody/  (bucket-partitioned distinct map)
+##   - counts/peptide/                  (bucket-partitioned counts)
+##
+## Resume/Skip
+## ----------
+## - Each output folder is considered "done" if it contains any parquet files.
+## - Set FORCE_REBUILD=TRUE to rebuild outputs even if they exist.
+##
+## Notes
+## -----
+## - Safe for source(): wrapped in main(); no quit()
+## - Windows path safe via helpers (forward slashes for DuckDB)
+################################################################################
 
-library(DBI)
-library(duckdb)
+# ==============================================================================
+# Load config + helpers
+# ==============================================================================
+source("R/helpers_paths.R")
+cfg <- load_config()
+P   <- get_paths(cfg)
 
-# ============================================================
-# Resume/skip logic:
-# - This script writes into its own output folders.
-# - If output folder already has parquet files, we SKIP on re-run.
-# - Force rebuild by deleting output folders or setting FORCE_REBUILD=TRUE.
-# ============================================================
+suppressPackageStartupMessages({
+  library(DBI)
+  library(duckdb)
+})
 
-FORCE_REBUILD <- FALSE  # set TRUE to rebuild even if outputs exist
-
-# helper: absolute + forward slashes (Windows-safe for DuckDB)
-norm <- function(x) normalizePath(x, winslash = "/", mustWork = FALSE)
-
-# helper: join without file.path() (prevents backslashes on Windows)
-pjoin <- function(...) norm(paste(..., sep = "/"))
-
-# Optional: catch backslashes before running
-assert_no_backslash <- function(x, name) {
-  if (grepl("\\\\", x)) stop("Backslash found in ", name, ":\n", x)
+main <- function() {
+  
+  # ---------------------------------------------------------------------------
+  # Settings
+  # ---------------------------------------------------------------------------
+  FORCE_REBUILD  <- FALSE
+  N_BUCKETS      <- 256L
+  
+  DUCKDB_THREADS <- 6L
+  DUCKDB_MEM     <- "44GB"
+  
+  # ---------------------------------------------------------------------------
+  # Helpers
+  # ---------------------------------------------------------------------------
+  part_done <- function(out_dir) {
+    if (!dir.exists(out_dir)) return(FALSE)
+    length(list.files(out_dir, pattern = "\\.parquet$", recursive = TRUE, full.names = TRUE)) > 0
+  }
+  
+  # ---------------------------------------------------------------------------
+  # INPUT (Part2 final dataset)
+  # ---------------------------------------------------------------------------
+  final_root   <- norm(P$final_part2_dir)
+  parquet_glob <- paste0(final_root, "/**/*.parquet")
+  
+  if (!dir.exists(final_root)) {
+    stop("Part2 final dataset folder not found: ", final_root)
+  }
+  assert_no_backslash(parquet_glob, "parquet_glob")
+  
+  # ---------------------------------------------------------------------------
+  # OUTPUT (Part4 root)
+  # ---------------------------------------------------------------------------
+  work_root <- norm(P$part4_root)
+  dir.create(work_root, showWarnings = FALSE, recursive = TRUE)
+  
+  duckdb_file <- pjoin(work_root, "build.duckdb")
+  duckdb_temp <- pjoin(work_root, "duckdb_temp")
+  dir.create(duckdb_temp, showWarnings = FALSE, recursive = TRUE)
+  
+  map_dir   <- pjoin(work_root, "base_distinct", "peptide_antibody")
+  count_dir <- pjoin(work_root, "counts", "peptide")
+  
+  dir.create(map_dir,   showWarnings = FALSE, recursive = TRUE)
+  dir.create(count_dir, showWarnings = FALSE, recursive = TRUE)
+  
+  # Sanity checks
+  assert_no_backslash(work_root, "work_root")
+  assert_no_backslash(duckdb_file, "duckdb_file")
+  assert_no_backslash(duckdb_temp, "duckdb_temp")
+  assert_no_backslash(map_dir, "map_dir")
+  assert_no_backslash(count_dir, "count_dir")
+  
+  cat("Part4 input Parquet dataset:\n  ", final_root, "\n", sep = "")
+  cat("Part4 output root:\n  ", work_root, "\n\n", sep = "")
+  
+  # ---------------------------------------------------------------------------
+  # DUCKDB
+  # ---------------------------------------------------------------------------
+  con <- dbConnect(duckdb::duckdb(), dbdir = duckdb_file)
+  on.exit(try(dbDisconnect(con, shutdown = TRUE), silent = TRUE), add = TRUE)
+  
+  dbExecute(con, sprintf("PRAGMA threads=%d;", DUCKDB_THREADS))
+  dbExecute(con, sprintf("PRAGMA memory_limit='%s';", DUCKDB_MEM))
+  dbExecute(con, sprintf("PRAGMA temp_directory='%s';", duckdb_temp))
+  dbExecute(con, "PRAGMA enable_progress_bar=true;")
+  
+  # ============================================================
+  # PART 1/2: Distinct (Peptide, Antibody) mapping
+  # ============================================================
+  if (!FORCE_REBUILD && part_done(map_dir)) {
+    cat("[1/2] Distinct peptide-antibody map already exists -> SKIP\n")
+  } else {
+    cat("[1/2] Writing distinct peptide-antibody map...\n")
+    
+    sql_map <- sprintf("
+      COPY (
+        WITH base AS (
+          SELECT Peptide, Antibody
+          FROM read_parquet('%s')
+          WHERE Peptide  IS NOT NULL AND trim(Peptide)  <> ''
+            AND Antibody IS NOT NULL AND trim(Antibody) <> ''
+        )
+        SELECT DISTINCT
+          Peptide,
+          Antibody,
+          (hash(Peptide) %% %d)::INTEGER AS bucket
+        FROM base
+      ) TO '%s'
+      (FORMAT PARQUET, PARTITION_BY(bucket), COMPRESSION ZSTD);
+    ", parquet_glob, N_BUCKETS, map_dir)
+    
+    assert_no_backslash(sql_map, "sql_map")
+    dbExecute(con, sql_map)
+    
+    if (!part_done(map_dir)) stop("Part 1 failed: no parquet written in ", map_dir)
+  }
+  
+  # ============================================================
+  # PART 2/2: Count distinct antibodies per peptide
+  # ============================================================
+  if (!FORCE_REBUILD && part_done(count_dir)) {
+    cat("[2/2] Peptide uniqueness counts already exist -> SKIP\n")
+  } else {
+    cat("[2/2] Writing peptide uniqueness counts (n_distinct_antibodies)...\n")
+    
+    map_glob <- paste0(map_dir, "/**/*.parquet")
+    assert_no_backslash(map_glob, "map_glob")
+    
+    sql_counts <- sprintf("
+      COPY (
+        SELECT
+          Peptide,
+          (hash(Peptide) %% %d)::INTEGER AS bucket,
+          COUNT(DISTINCT Antibody) AS n_distinct_antibodies
+        FROM read_parquet('%s')
+        GROUP BY Peptide, bucket
+      ) TO '%s'
+      (FORMAT PARQUET, PARTITION_BY(bucket), COMPRESSION ZSTD);
+    ", N_BUCKETS, map_glob, count_dir)
+    
+    assert_no_backslash(sql_counts, "sql_counts")
+    dbExecute(con, sql_counts)
+    
+    if (!part_done(count_dir)) stop("Part 2 failed: no parquet written in ", count_dir)
+  }
+  
+  cat("\nDONE (Part4).\n")
+  cat("Distinct peptide-antibody map:\n  ", map_dir, "\n", sep = "")
+  cat("Peptide uniqueness counts:\n  ", count_dir, "\n", sep = "")
+  
+  invisible(TRUE)
 }
 
-# Check whether a part is already done (folder exists and has parquet files)
-part_done <- function(out_dir) {
-  if (!dir.exists(out_dir)) return(FALSE)
-  length(list.files(out_dir, pattern = "\\.parquet$", recursive = TRUE, full.names = TRUE)) > 0
-}
-
-# -----------------------------
-# INPUT (your big parquet DB)
-# -----------------------------
-final_root   <- norm("D:/OAS/OAS_human_heavychain_disease_tryptic/parquet_db_partitioned/final")
-parquet_glob <- paste0(final_root, "/**/*.parquet")
-
-# -----------------------------
-# OUTPUT WORK AREA (BIG DRIVE)
-# -----------------------------
-work_root <- norm("OAS_human_heavychain_disease_tryptic/Peptide_uniqueness")  # <-- CHANGE if needed
-dir.create(work_root, showWarnings = FALSE, recursive = TRUE)
-
-duckdb_file <- pjoin(work_root, "build.duckdb")
-duckdb_temp <- pjoin(work_root, "duckdb_temp")
-dir.create(duckdb_temp, showWarnings = FALSE, recursive = TRUE)
-
-# Buckets (match your other scripts if you want)
-N_BUCKETS <- 256L
-
-# Output dirs
-map_dir   <- pjoin(work_root, "base_distinct", "peptide_antibody")  # distinct (Peptide, Antibody)
-count_dir <- pjoin(work_root, "counts", "peptide")                  # peptide -> #antibodies
-
-dir.create(map_dir, showWarnings = FALSE, recursive = TRUE)
-dir.create(count_dir, showWarnings = FALSE, recursive = TRUE)
-
-# Sanity checks (must be all forward slashes)
-assert_no_backslash(parquet_glob, "parquet_glob")
-assert_no_backslash(work_root, "work_root")
-assert_no_backslash(duckdb_file, "duckdb_file")
-assert_no_backslash(duckdb_temp, "duckdb_temp")
-assert_no_backslash(map_dir, "map_dir")
-assert_no_backslash(count_dir, "count_dir")
-
-# -----------------------------
-# DUCKDB
-# -----------------------------
-con <- dbConnect(duckdb::duckdb(), dbdir = duckdb_file)
-on.exit(try(dbDisconnect(con, shutdown = TRUE), silent = TRUE), add = TRUE)
-
-dbExecute(con, "PRAGMA threads=6;")
-dbExecute(con, "PRAGMA memory_limit='44GB';")
-dbExecute(con, sprintf("PRAGMA temp_directory='%s';", duckdb_temp))
-dbExecute(con, "PRAGMA enable_progress_bar=true;")
-
-# ============================================================
-# PART 1: Distinct Peptide-Antibody mapping (dedupe early)
-# ============================================================
-if (!FORCE_REBUILD && part_done(map_dir)) {
-  cat("\n[1/2] Distinct peptide-antibody map already exists -> SKIP\n")
-} else {
-  cat("\n[1/2] Writing distinct peptide-antibody map...\n")
-  
-  sql_map <- sprintf("
-  COPY (
-    WITH base AS (
-      SELECT Peptide, Antibody
-      FROM read_parquet('%s')
-      WHERE Peptide  IS NOT NULL AND trim(Peptide)  <> ''
-        AND Antibody IS NOT NULL AND trim(Antibody) <> ''
-    )
-    SELECT DISTINCT
-      Peptide,
-      Antibody,
-      (hash(Peptide) %% %d)::INTEGER AS bucket
-    FROM base
-  ) TO '%s'
-  (FORMAT PARQUET, PARTITION_BY(bucket), COMPRESSION ZSTD);
-  ", parquet_glob, N_BUCKETS, map_dir)
-  
-  assert_no_backslash(sql_map, "sql_map")
-  dbExecute(con, sql_map)
-  
-  if (!part_done(map_dir)) stop("Part 1 failed: no parquet written in ", map_dir)
-}
-
-# ============================================================
-# PART 2: Count distinct antibodies per peptide
-# ============================================================
-if (!FORCE_REBUILD && part_done(count_dir)) {
-  cat("\n[2/2] Peptide uniqueness table already exists -> SKIP\n")
-} else {
-  cat("\n[2/2] Writing peptide uniqueness table (n_distinct_antibodies)...\n")
-  
-  map_glob <- paste0(map_dir, "/**/*.parquet")
-  
-  sql_counts <- sprintf("
-  COPY (
-    SELECT
-      Peptide,
-      (hash(Peptide) %% %d)::INTEGER AS bucket,
-      COUNT(DISTINCT Antibody) AS n_distinct_antibodies
-    FROM read_parquet('%s')
-    GROUP BY Peptide, bucket
-  ) TO '%s'
-  (FORMAT PARQUET, PARTITION_BY(bucket), COMPRESSION ZSTD);
-  ", N_BUCKETS, map_glob, count_dir)
-  
-  assert_no_backslash(sql_counts, "sql_counts")
-  dbExecute(con, sql_counts)
-  
-  if (!part_done(count_dir)) stop("Part 2 failed: no parquet written in ", count_dir)
-}
-
-cat("\nDONE.\n")
-cat("Distinct peptide-antibody map:", map_dir, "\n")
-cat("Peptide uniqueness counts:", count_dir, "\n")
-
-# Optional: quick example query (comment out if not needed)
-# counts_glob <- paste0(count_dir, "/**/*.parquet")
-# head(dbGetQuery(con, sprintf("SELECT * FROM read_parquet('%s') LIMIT 10;", counts_glob)))
+main()

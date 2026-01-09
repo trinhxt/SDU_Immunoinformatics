@@ -25,3 +25,9 @@ PeptideDB/
 
 # local configs
 config/paths.yml
+
+# Large reference data
+data/reference/*.RData
+data/reference/*.rds
+data/reference/*.parquet
+
