@@ -246,7 +246,7 @@ ui <- fluidPage(
 Standard protein databases, such as UniProt and NCBI-RefSeq, contain a limited number of antibody sequences compared to the human body’s capacity to generate billions and currently lack disease-specific antibody sequences.
 This limitation could lead to the misidentification of antibodies in samples.
 To overcome this challenge, DAT-DB, a database of disease-specific antibodies, provides researchers with antibody tryptic peptides derived from next-generation sequencing of antibody repertoires."),
-              tags$p(tags$strong("Author: Xuan-Tung Trinh (txt@bmb.sdu.dk)")),
+              tags$p(tags$strong("Author: Xuan-Tung Trinh (xttrinh1199@gmail.com)")),
               tags$hr(),
               tags$p(tags$strong("How to use this app")),
               tags$ul(

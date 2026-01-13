@@ -1,7 +1,7 @@
 ################################################################################
 ## DBbuild.R
 ##
-## Run selected pipeline scripts sequentially (Part1 → Part6).
+## Run selected pipeline scripts sequentially (Part1 → Part7).
 ##
 ## How to use
 ## ----------

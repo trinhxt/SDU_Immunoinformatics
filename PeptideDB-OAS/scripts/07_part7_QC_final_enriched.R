@@ -21,7 +21,7 @@ suppressPackageStartupMessages({
 # CONFIG
 # ------------------------------------------------------------------------------
 parquet_dir_final   <- "D:/OAS/OAS_human_heavychain_disease_tryptic/parquet_db_partitioned/final"
-parquet_dir_enrich  <- "D:/OAS/PeptideDB/final_enriched"
+parquet_dir_enrich  <- "D:/OAS/OASpeptideDB"
 
 # Expected enrichment columns (must exist in final_enriched but not required in final)
 enrich_added_cols <- c(
