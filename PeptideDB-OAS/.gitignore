@@ -17,11 +17,13 @@ renv/staging/
 duckdb_temp*/
 *_temp*/
 *_tmp*/
+*.tmp
 
 # data folders (customize to your actual locations if inside repo)
 OAS_human_heavychain/
 OAS_metadata.csv
 PeptideDB/
+.tmp/
 
 # local configs
 config/paths.yml
