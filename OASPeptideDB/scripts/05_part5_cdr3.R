@@ -1,34 +1,34 @@
 ################################################################################
 ## scripts/05_part5_cdr3.R
 ##
-## Part5: Peptide-in-CDR3 flag
-## Goal:
-##   For each Peptide, compute peptide_in_cdr3:
-##     1 if peptide is contained in cdr3_aa in ANY observed row context
-##     0 otherwise
+## Part5: Peptide-in-CDR3 flag (CDR3-SPANNING by overlap > 3 AA)
 ##
-## Scalable plan:
-##   1) DISTINCT (Peptide, cdr3_aa) pairs (dedupe early) + bucket by Peptide
-##   2) Per-pair flag via instr(cdr3_aa, Peptide) > 0
-##   3) Aggregate to one row per Peptide: MAX(flag) -> 1/0
+## Update requested:
+## - First dedupe DISTINCT (Antibody, Peptide, cdr3_aa)
+## - Then mark peptide_in_cdr3 = 1 if Peptide overlaps the CDR3 region by >3 AA
+##   using positional overlap in the Antibody sequence:
+##
+##   (Peptide_Start <= CDR3_End) AND (Peptide_End >= CDR3_Start)
+##   overlap_len = min(Peptide_End, CDR3_End) - max(Peptide_Start, CDR3_Start) + 1
+##   peptide_in_cdr3 = 1 if overlap_len > 3 else 0
+##
+## Assumptions:
+## - "Antibody" = Antibody (full AA sequence) in Part2 parquet.
+## - Peptide_Start and CDR3_Start are located by instr(Antibody, substring).
+##   (instr() returns first match; if there are repeats, this uses the first.)
 ##
 ## Uses config/paths.yml (via helpers_paths.R):
 ##   - P$final_part2_dir : final Parquet dataset from Part2
 ##   - P$part5_root      : output root for Part5
 ##
 ## Outputs (under P$part5_root):
-##   - base_distinct/peptide_cdr3_pair/  (bucket-partitioned distinct pairs)
-##   - answer/peptide/                   (bucket-partitioned peptide_in_cdr3)
+##   - base_distinct/antibody_peptide_cdr3/   (bucket-partitioned distinct triples)
+##   - answer/peptide/                        (bucket-partitioned peptide_in_cdr3)
 ##
 ## Resume/Skip
 ## ----------
 ## - Each output folder is considered "done" if it contains any parquet files.
 ## - Set FORCE_REBUILD=TRUE to rebuild outputs even if they exist.
-##
-## Notes
-## -----
-## - Safe for source(): wrapped in main(); no quit()
-## - Windows path safe via helpers (forward slashes for DuckDB)
 ################################################################################
 
 # ==============================================================================
@@ -83,17 +83,18 @@ main <- function() {
   duckdb_temp <- pjoin(work_root, "duckdb_temp")
   dir.create(duckdb_temp, showWarnings = FALSE, recursive = TRUE)
   
-  pair_dir   <- pjoin(work_root, "base_distinct", "peptide_cdr3_pair")
+  # Updated: distinct triples (Antibody, Peptide, cdr3_aa)
+  triple_dir <- pjoin(work_root, "base_distinct", "antibody_peptide_cdr3")
   answer_dir <- pjoin(work_root, "answer", "peptide")
   
-  dir.create(pair_dir,   showWarnings = FALSE, recursive = TRUE)
+  dir.create(triple_dir, showWarnings = FALSE, recursive = TRUE)
   dir.create(answer_dir, showWarnings = FALSE, recursive = TRUE)
   
   # Sanity checks
-  assert_no_backslash(work_root, "work_root")
-  assert_no_backslash(duckdb_file, "duckdb_file")
-  assert_no_backslash(duckdb_temp, "duckdb_temp")
-  assert_no_backslash(pair_dir, "pair_dir")
+  assert_no_backslash(work_root,  "work_root")
+  assert_no_backslash(duckdb_file,"duckdb_file")
+  assert_no_backslash(duckdb_temp,"duckdb_temp")
+  assert_no_backslash(triple_dir, "triple_dir")
   assert_no_backslash(answer_dir, "answer_dir")
   
   cat("Part5 input Parquet dataset:\n  ", final_root, "\n", sep = "")
@@ -111,58 +112,103 @@ main <- function() {
   dbExecute(con, "PRAGMA enable_progress_bar=true;")
   
   # ============================================================
-  # PART 1/2: DISTINCT (Peptide, cdr3_aa) pairs
+  # PART 1/2: DISTINCT (Antibody, Peptide, cdr3_aa) triples
   # ============================================================
-  if (!FORCE_REBUILD && part_done(pair_dir)) {
-    cat("[1/2] Distinct (Peptide, cdr3_aa) pairs already exist -> SKIP\n")
+  if (!FORCE_REBUILD && part_done(triple_dir)) {
+    cat("[1/2] Distinct (Antibody, Peptide, cdr3_aa) already exist -> SKIP\n")
   } else {
-    cat("[1/2] Writing distinct (Peptide, cdr3_aa) pairs...\n")
+    cat("[1/2] Writing distinct (Antibody, Peptide, cdr3_aa) triples...\n")
     
-    sql_pairs <- sprintf("
+    sql_triples <- sprintf("
       COPY (
         WITH base AS (
-          SELECT Peptide, cdr3_aa
+          SELECT
+            Antibody AS Antibody,
+            Peptide,
+            cdr3_aa
           FROM read_parquet('%s')
-          WHERE Peptide  IS NOT NULL AND trim(Peptide)  <> ''
-            AND cdr3_aa  IS NOT NULL AND trim(cdr3_aa)  <> ''
+          WHERE Antibody IS NOT NULL AND trim(Antibody) <> ''
+            AND Peptide              IS NOT NULL AND trim(Peptide)              <> ''
+            AND cdr3_aa              IS NOT NULL AND trim(cdr3_aa)              <> ''
         )
         SELECT DISTINCT
+          Antibody,
           Peptide,
           cdr3_aa,
           (hash(Peptide) %% %d)::INTEGER AS bucket
         FROM base
       ) TO '%s'
       (FORMAT PARQUET, PARTITION_BY(bucket), COMPRESSION ZSTD);
-    ", parquet_glob, N_BUCKETS, pair_dir)
+    ", parquet_glob, N_BUCKETS, triple_dir)
     
-    assert_no_backslash(sql_pairs, "sql_pairs")
-    dbExecute(con, sql_pairs)
+    assert_no_backslash(sql_triples, "sql_triples")
+    dbExecute(con, sql_triples)
     
-    if (!part_done(pair_dir)) stop("Part 1 failed: no parquet written in ", pair_dir)
+    if (!part_done(triple_dir)) stop("Part 1 failed: no parquet written in ", triple_dir)
   }
   
   # ============================================================
-  # PART 2/2: Peptide-level answer (1/0)
+  # PART 2/2: Peptide-level answer (1/0) based on overlap > 3 AA
   # ============================================================
   if (!FORCE_REBUILD && part_done(answer_dir)) {
     cat("[2/2] Peptide CDR3 answer table already exists -> SKIP\n")
   } else {
-    cat("[2/2] Writing peptide CDR3 answer table (peptide_in_cdr3)...\n")
+    cat("[2/2] Writing peptide CDR3 answer table (peptide_in_cdr3 by overlap > 3 AA)...\n")
     
-    pair_glob <- paste0(pair_dir, "/**/*.parquet")
-    assert_no_backslash(pair_glob, "pair_glob")
+    triple_glob <- paste0(triple_dir, "/**/*.parquet")
+    assert_no_backslash(triple_glob, "triple_glob")
     
     sql_answer <- sprintf("
       COPY (
+        WITH t AS (
+          SELECT
+            Antibody,
+            Peptide,
+            cdr3_aa,
+            (hash(Peptide) %% %d)::INTEGER AS bucket,
+            instr(Antibody, Peptide) AS pep_start,
+            instr(Antibody, cdr3_aa) AS cdr3_start,
+            length(Peptide) AS pep_len,
+            length(cdr3_aa) AS cdr3_len
+          FROM read_parquet('%s')
+        ),
+        pos AS (
+          SELECT
+            Peptide,
+            bucket,
+            pep_start,
+            (pep_start  + pep_len  - 1) AS pep_end,
+            cdr3_start,
+            (cdr3_start + cdr3_len - 1) AS cdr3_end
+          FROM t
+          WHERE pep_start  > 0
+            AND cdr3_start > 0
+        ),
+        scored AS (
+          SELECT
+            Peptide,
+            bucket,
+            CASE
+              WHEN (pep_start <= cdr3_end) AND (pep_end >= cdr3_start)
+              THEN
+                -- overlap_len = min(pep_end,cdr3_end) - max(pep_start,cdr3_start) + 1
+                CASE
+                  WHEN (LEAST(pep_end, cdr3_end) - GREATEST(pep_start, cdr3_start) + 1) > 3
+                  THEN 1 ELSE 0
+                END
+              ELSE 0
+            END AS span_flag
+          FROM pos
+        )
         SELECT
           Peptide,
-          (hash(Peptide) %% %d)::INTEGER AS bucket,
-          MAX(CASE WHEN instr(cdr3_aa, Peptide) > 0 THEN 1 ELSE 0 END) AS peptide_in_cdr3
-        FROM read_parquet('%s')
+          bucket,
+          MAX(span_flag) AS peptide_in_cdr3
+        FROM scored
         GROUP BY Peptide, bucket
       ) TO '%s'
       (FORMAT PARQUET, PARTITION_BY(bucket), COMPRESSION ZSTD);
-    ", N_BUCKETS, pair_glob, answer_dir)
+    ", N_BUCKETS, triple_glob, answer_dir)
     
     assert_no_backslash(sql_answer, "sql_answer")
     dbExecute(con, sql_answer)
@@ -171,8 +217,8 @@ main <- function() {
   }
   
   cat("\nDONE (Part5).\n")
-  cat("Distinct pairs:\n  ", pair_dir, "\n", sep = "")
-  cat("Peptide answer (1/0):\n  ", answer_dir, "\n", sep = "")
+  cat("Distinct triples:\n  ", triple_dir, "\n", sep = "")
+  cat("Peptide answer (1/0) peptide_in_cdr3:\n  ", answer_dir, "\n", sep = "")
   
   invisible(TRUE)
 }
