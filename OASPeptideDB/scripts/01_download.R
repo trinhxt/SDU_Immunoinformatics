@@ -1,5 +1,5 @@
 ################################################################################
-## scripts/01_part1_download.R
+## scripts/01_download.R
 ##
 ## Part1: Download + preprocess OAS CSV.GZ files
 ##
