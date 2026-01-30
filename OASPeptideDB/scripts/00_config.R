@@ -1,0 +1,67 @@
+################################################################################
+## 00_config.R
+##
+## Single configuration file for the OAS Proteomics Workflow.
+## Source this at the top of your scripts: source("00_config.R")
+################################################################################
+
+# ==============================================================================
+# 1. Project Directories (Customize these)
+# ==============================================================================
+# Where the raw OAS shell script is located (Download this from OAS website)
+INPUT_SHELL_SCRIPT <- "data/bulk_download.sh"
+
+# Where to store the raw downloaded files (can be deleted after processing)
+RAW_DATA_DIR <- "data/raw"
+
+# Where to save the cleaned, processed CSV.GZ files
+PROCESSED_DATA_DIR <- "data/processed"
+
+# Where to save the metadata CSV
+METADATA_FILE <- "data/metadata.csv"
+
+# Where to build the final Parquet database
+PARQUET_DB_DIR <- "data/parquet_db"
+
+# Where to store logs and temporary files
+WORK_DIR <- "work_temp"
+
+# Reference file for filtering (Uniprot Tryptic Peptides)
+REF_PEPTIDE_RDATA <- "data/reference/uniprot_tryptic.RData"
+
+
+# ==============================================================================
+# 2. Computational Settings
+# ==============================================================================
+# Number of cores for parallel processing (downloading/digesting)
+N_CORES <- 6L
+
+# DuckDB settings for database compaction
+DUCKDB_MEMORY_LIMIT <- "40GB"
+
+
+# ==============================================================================
+# 3. Helper Functions (Path Normalization)
+# ==============================================================================
+# Ensure directories exist
+for (d in c(RAW_DATA_DIR, PROCESSED_DATA_DIR, PARQUET_DB_DIR, WORK_DIR, dirname(METADATA_FILE))) {
+  if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+}
+
+# Normalize paths for Windows/Linux compatibility
+norm_path <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
+
+P <- list(
+  shell_script    = norm_path(INPUT_SHELL_SCRIPT),
+  raw_dir         = norm_path(RAW_DATA_DIR),
+  processed_dir   = norm_path(PROCESSED_DATA_DIR),
+  metadata_csv    = norm_path(METADATA_FILE),
+  parquet_dir     = norm_path(PARQUET_DB_DIR),
+  work_dir        = norm_path(WORK_DIR),
+  ref_rdata       = norm_path(REF_PEPTIDE_RDATA)
+)
+
+# Print status
+message("Configuration loaded.")
+message(" - Input Script: ", P$shell_script)
+message(" - Output DB:    ", P$parquet_dir)
