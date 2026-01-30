@@ -9,22 +9,22 @@
 # 1. Project Directories (Customize these)
 # ==============================================================================
 # Where the raw OAS shell script is located (Download this from OAS website)
-INPUT_SHELL_SCRIPT <- "data/bulk_download.sh"
+DOWNLOAD_SHELL_SCRIPT <- "data/bulk_download.sh"
 
 # Where to store the raw downloaded files (can be deleted after processing)
-RAW_DATA_DIR <- "data/raw"
+RAW_DATA_DIR <- "D:/OAS/raw"
 
 # Where to save the cleaned, processed CSV.GZ files
-PROCESSED_DATA_DIR <- "data/processed"
+PROCESSED_DATA_DIR <- "D:/OAS/processed"
 
 # Where to save the metadata CSV
-METADATA_FILE <- "data/metadata.csv"
+METADATA_FILE <- "D:/OAS/OAS_metadata.csv"
 
 # Where to build the final Parquet database
-PARQUET_DB_DIR <- "data/parquet_db"
+PARQUET_DB_DIR <- "D:/OAS/parquet_db"
 
 # Where to store logs and temporary files
-WORK_DIR <- "work_temp"
+WORK_DIR <- "E:/OAS_temp"
 
 # Reference file for filtering (Uniprot Tryptic Peptides)
 REF_PEPTIDE_RDATA <- "data/reference/uniprot_tryptic.RData"
@@ -52,7 +52,7 @@ for (d in c(RAW_DATA_DIR, PROCESSED_DATA_DIR, PARQUET_DB_DIR, WORK_DIR, dirname(
 norm_path <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
 
 P <- list(
-  shell_script    = norm_path(INPUT_SHELL_SCRIPT),
+  shell_script    = norm_path(DOWNLOAD_SHELL_SCRIPT),
   raw_dir         = norm_path(RAW_DATA_DIR),
   processed_dir   = norm_path(PROCESSED_DATA_DIR),
   metadata_csv    = norm_path(METADATA_FILE),
