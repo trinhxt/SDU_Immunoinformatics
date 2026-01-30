@@ -16,13 +16,13 @@
 # 1) Choose which scripts to run (comment out any you want to skip)
 # ==============================================================================
 pipeline_scripts <- list(
-  "Part1 – Download & preprocess OAS"          = "scripts/01_part1_download.R",
-  "Part2 – Digestion & Parquet DB build"       = "scripts/02_part2_digestion.R",
-  "Part3 – Disease presence"                   = "scripts/03_part3_disease_presence.R",
-  "Part4 – Peptide uniqueness"                 = "scripts/04_part4_peptide_uniqueness.R",
-  "Part5 – Peptide in CDR3"                    = "scripts/05_part5_cdr3.R",
-  "Part6 – Zenodo PeptideDB bundle"            = "scripts/06_part6_zenodo_bundle.R",
-  "Part7 – QC check of part 6"                 = "scripts/07_part7_QC_final_enriched.R"
+  "Part1 – Download & preprocess OAS"          = "scripts/01_download.R"#,
+  #"Part2 – Digestion & Parquet DB build"       = "scripts/02_part2_digestion.R",
+  #"Part3 – Disease presence"                   = "scripts/03_part3_disease_presence.R",
+  #"Part4 – Peptide uniqueness"                 = "scripts/04_part4_peptide_uniqueness.R",
+  #"Part5 – Peptide in CDR3"                    = "scripts/05_part5_cdr3.R",
+  #"Part6 – Zenodo PeptideDB bundle"            = "scripts/06_part6_zenodo_bundle.R",
+  #"Part7 – QC check of part 6"                 = "scripts/07_part7_QC_final_enriched.R"
 )
 
 # ==============================================================================
