@@ -30,11 +30,15 @@
 
 
 # ==============================================================================
-# Load config + path helpers
+# Load config 
 # ==============================================================================
-source("R/helpers_paths.R")
-cfg <- load_config()
-P   <- get_paths(cfg)
+source("scripts/00_config.R")
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(R.utils)
+  library(jsonlite)
+})
 
 suppressPackageStartupMessages({
   library(arrow)
