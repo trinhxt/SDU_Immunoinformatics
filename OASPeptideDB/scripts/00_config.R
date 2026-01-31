@@ -15,7 +15,7 @@ DOWNLOAD_SHELL_SCRIPT <- "data/bulk_download.sh"
 RAW_DATA_DIR <- "D:/OAS/raw"
 
 # Where to save the cleaned, processed CSV.GZ files
-PROCESSED_DATA_DIR <- "D:/OAS/download"
+PROCESSED_DATA_DIR <- "D:/OAS/antibody"
 
 # Where to save the tryptic peptide data (CSV.GZ file)
 TRYPTIC_DATA_DIR <- "D:/OAS/tryptic"
@@ -24,13 +24,13 @@ TRYPTIC_DATA_DIR <- "D:/OAS/tryptic"
 METADATA_FILE <- "D:/OAS/OAS_metadata.csv"
 
 # Where to build the final Parquet database
-PARQUET_DB_DIR <- "D:/OAS/parquet_db"
+PARQUET_DB_DIR <- "D:/OAS/tryptic/parquet_db"
 
 # Where to store logs and temporary files
 WORK_DIR <- "D:/OAS/temp"
 
 # Reference file for filtering (Uniprot Tryptic Peptides)
-REF_PEPTIDE_RDATA <- "data/reference/uniprot_tryptic.RData"
+REF_PEPTIDE_RDATA <- "data/UniProtNCBI_Tryptic.RData"
 
 
 # ==============================================================================
@@ -70,11 +70,11 @@ P <- list(
   digest_csv_dir  = pjoin(TRYPTIC_DATA_DIR, "digest_csv_gz"),
   log_dir         = pjoin(TRYPTIC_DATA_DIR, "Log_files"),
   staging_root    = pjoin(PARQUET_DB_DIR, "_staging"),
-  final_db_dir    = pjoin(PARQUET_DB_DIR, "final"),
+  db_state1       = pjoin(PARQUET_DB_DIR, "db_state1"),
   
   ref_rdata       = norm_path(REF_PEPTIDE_RDATA)
 )
 
 message("Configuration loaded.")
 message(" - Processed Input: ", P$processed_dir)
-message(" - Final Output DB: ", P$final_db_dir)
+message(" - Final Output DB: ", P$db_state1)
