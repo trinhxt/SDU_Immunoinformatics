@@ -1,5 +1,5 @@
 ################################################################################
-## scripts/02_part2_digestion.R
+## scripts/02_digestion.R
 ##
 ## Part2: Build peptide–antibody Parquet DB from processed OAS files
 ##
