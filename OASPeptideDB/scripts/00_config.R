@@ -67,8 +67,8 @@ P <- list(
   
   # Part 2 Specific Paths (Derived from WORK_DIR and PARQUET_DB_DIR)
   work_root       = norm_path(WORK_DIR),
-  digest_csv_dir  = pjoin(WORK_DIR, "digest_csv_gz"),
-  log_dir         = pjoin(WORK_DIR, "Log_files"),
+  digest_csv_dir  = pjoin(TRYPTIC_DATA_DIR, "digest_csv_gz"),
+  log_dir         = pjoin(TRYPTIC_DATA_DIR, "Log_files"),
   staging_root    = pjoin(PARQUET_DB_DIR, "_staging"),
   final_db_dir    = pjoin(PARQUET_DB_DIR, "final"),
   
