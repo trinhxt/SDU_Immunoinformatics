@@ -3,29 +3,25 @@
 ##
 ## Part2: Build peptide–antibody Parquet DB from processed OAS files
 ##
-## Uses config/paths.yml (via helpers_paths.R):
-##   - P$oas_processed_dir : input processed OAS *.csv.gz (from Part1)
-##   - P$metadata_csv      : metadata CSV (from Part1)
-##   - P$work_root         : working root for Part2 outputs
-##   - P$final_part2_dir   : final compacted Parquet dataset directory
+## Logic:
+## 1. Digestion (CSV -> CSV):
+##    - Reads processed OAS files (sequence_alignment_aa)
+##    - In-silico digestion (Trypsin, 0/1 missed cleavages)
+##    - Calculates Peptide Start/End indices
+##    - Flags "CDR3-Spanning" peptides using Coordinate Overlap
+##    - Filters against UniProt reference background
 ##
-## Outputs (under P$work_root):
-##   - digest_csv_gz/                   (Section 1 outputs; one per input file)
-##   - parquet_db_partitioned/_staging/ (Section 2A per-file staging folders)
-##   - parquet_db_partitioned/final/    (Section 2B final compacted dataset)
-##   - Log_files/                       (resume logs)
+## 2. Staging (CSV -> Parquet):
+##    - Converts digested CSVs to Parquet partitions (Disease/Isotype/etc)
 ##
-## Update (2026-01):
-## - After successful compaction, delete _staging to free disk space
-##   (only if final dataset is verified to contain Parquet files).
+## 3. Compaction (Parquet -> Parquet):
+##    - Merges many small staging files into optimized final dataset
 ################################################################################
 
 # ==============================================================================
-# Load config + helpers
+# Load Config
 # ==============================================================================
-source("R/helpers_paths.R")
-cfg <- load_config()
-P   <- get_paths(cfg)
+source("scripts/00_config.R")
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -41,104 +37,53 @@ suppressPackageStartupMessages({
 
 main <- function() {
   
-  cat("Arrow version:", as.character(packageVersion("arrow")), "\n\n")
+  cat("Arrow version:", as.character(packageVersion("arrow")), "\n")
   
   # ---------------------------------------------------------------------------
   # Settings
   # ---------------------------------------------------------------------------
-  FORCE_REBUILD_S1  <- FALSE  # set TRUE to redo digestion CSV.GZ
-  FORCE_REBUILD_S2  <- FALSE  # set TRUE to redo staging (per-file parquet)
-  FORCE_COMPACT     <- FALSE  # set TRUE to redo final compaction (delete final first is best)
+  FORCE_REBUILD_S1  <- FALSE  # Redo digestion?
+  FORCE_REBUILD_S2  <- FALSE  # Redo staging?
+  FORCE_COMPACT     <- FALSE  # Redo final compaction?
   
-  # Workers (Section 1 + Section 2A)
-  N_WORKERS <- 6L
+  # Ensure sub-directories exist
+  dir.create(P$digest_csv_dir, showWarnings = FALSE, recursive = TRUE)
+  dir.create(P$staging_root,   showWarnings = FALSE, recursive = TRUE)
+  dir.create(P$db_state1,      showWarnings = FALSE, recursive = TRUE)
+  dir.create(P$log_dir,        showWarnings = FALSE, recursive = TRUE)
   
-  # DuckDB compaction settings
-  DUCKDB_THREADS <- 24L
-  DUCKDB_MEM     <- "44GB"
-  ROW_GROUP_SIZE <- 1000000L
-  
-  # ---------------------------------------------------------------------------
-  # Helpers
-  # ---------------------------------------------------------------------------
-  final_dataset_ok <- function(final_root) {
-    dir.exists(final_root) &&
-      length(list.files(final_root, pattern = "\\.parquet$", recursive = TRUE)) > 0
-  }
-  
-  # ---------------------------------------------------------------------------
-  # Paths from config
-  # ---------------------------------------------------------------------------
-  in_dir    <- P$oas_processed_dir
-  work_root <- P$work_root
-  
-  if (!dir.exists(in_dir)) stop("Input processed dir not found: ", in_dir)
-  if (!file.exists(P$metadata_csv)) stop("Metadata CSV not found: ", P$metadata_csv)
-  
-  # Section 1 output
-  digest_csv_dir <- pjoin(work_root, "digest_csv_gz")
-  dir.create(digest_csv_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  # Section 2 output roots
-  parquet_db_dir <- pjoin(work_root, "parquet_db_partitioned")
-  staging_root   <- pjoin(parquet_db_dir, "_staging")
-  final_root     <- norm(P$final_part2_dir)  # allow config override
-  dir.create(parquet_db_dir, showWarnings = FALSE, recursive = TRUE)
-  dir.create(staging_root,   showWarnings = FALSE, recursive = TRUE)
-  dir.create(final_root,     showWarnings = FALSE, recursive = TRUE)
-  
-  # Logs
-  log_dir <- pjoin(work_root, "Log_files")
-  dir.create(log_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  processed_log_s1 <- pjoin(log_dir, "Section1_digestion_processed_files.txt")
-  failed_log_s1    <- pjoin(log_dir, "Section1_digestion_failed_files.txt")
-  processed_log_s2 <- pjoin(log_dir, "Section2_parquet_processed_files.txt")
-  failed_log_s2    <- pjoin(log_dir, "Section2_parquet_failed_files.txt")
-  
-  for (f in c(processed_log_s1, failed_log_s1, processed_log_s2, failed_log_s2)) {
-    if (!file.exists(f)) file.create(f)
-  }
-  
-  processed_s1 <- readLines(processed_log_s1, warn = FALSE)
-  processed_s2 <- readLines(processed_log_s2, warn = FALSE)
-  
-  cat("Input processed OAS dir:\n  ", in_dir, "\n", sep = "")
-  cat("Work root:\n  ", work_root, "\n", sep = "")
-  cat("Digest CSV dir:\n  ", digest_csv_dir, "\n", sep = "")
-  cat("Staging root:\n  ", staging_root, "\n", sep = "")
-  cat("Final Parquet dataset:\n  ", final_root, "\n\n", sep = "")
+  # Log files
+  logs <- list(
+    s1_proc = file.path(P$log_dir, "Section1_digestion_processed_files.txt"),
+    s1_fail = file.path(P$log_dir, "Section1_digestion_failed_files.txt"),
+    s2_proc = file.path(P$log_dir, "Section2_parquet_processed_files.txt"),
+    s2_fail = file.path(P$log_dir, "Section2_parquet_failed_files.txt")
+  )
+  for (f in logs) if (!file.exists(f)) file.create(f)
   
   # ---------------------------------------------------------------------------
-  # 1) Reference peptide filter set
+  # 1) Load Reference Filter
   # ---------------------------------------------------------------------------
-  ref_rdata <- P$reference_tryptic_rdata
-  if (!file.exists(ref_rdata)) {
-    stop(
-      "Reference peptide file not found:\n  ", ref_rdata, "\n\n",
-      "See data/reference/README.md for instructions to build it."
-    )
-  }
+  if (!file.exists(P$ref_rdata)) stop("Ref file missing: ", P$ref_rdata)
   
-  cat("Loading reference peptides:\n  ",
-      normalizePath(ref_rdata, winslash = "/", mustWork = FALSE), "\n\n", sep = "")
-  
-  load(ref_rdata) # creates UniProtNCBI_Tryptic
+  cat("Loading reference peptides...\n")
+  load(P$ref_rdata) # Expects object 'UniProtNCBI_Tryptic'
   ref_dt <- unique(data.table(Peptide = as.character(UniProtNCBI_Tryptic)))
   setkey(ref_dt, Peptide)
-  rm(UniProtNCBI_Tryptic)
-  gc()
+  rm(UniProtNCBI_Tryptic); gc()
   
   # ---------------------------------------------------------------------------
-  # 2) Metadata (select disease-mapped files + partition constants)
+  # 2) Load Metadata
   # ---------------------------------------------------------------------------
   meta_cols <- c("Filename", "Disease", "BSource", "BType", "Isotype")
-  metadata  <- fread(P$metadata_csv, select = meta_cols)
+  if (!file.exists(P$metadata_csv)) stop("Metadata missing: ", P$metadata_csv)
   
+  metadata <- fread(P$metadata_csv, select = meta_cols)
   metadata[, (meta_cols) := lapply(.SD, as.character), .SDcols = meta_cols]
   
+  # Filter for valid metadata
   metadata <- metadata[
-    !is.na(Disease) & Disease != "None" & Disease != "" &
+    !is.na(Disease) & Disease != "" &
       !is.na(BSource) & BSource != "" &
       !is.na(BType)   & BType   != "" &
       !is.na(Isotype) & Isotype != ""
@@ -146,328 +91,265 @@ main <- function() {
   setkey(metadata, Filename)
   
   # ---------------------------------------------------------------------------
-  # 3) Input discovery (only files present in metadata)
+  # 3) Identify Input Files
   # ---------------------------------------------------------------------------
-  all_files <- list.files(in_dir, full.names = TRUE, recursive = FALSE, pattern = "\\.csv\\.gz$")
-  if (!length(all_files)) stop("No *.csv.gz files found in: ", in_dir)
-  
+  all_files <- list.files(P$processed_dir, full.names = TRUE, pattern = "\\.csv\\.gz$")
   task_dt <- data.table(file_path = all_files, filename = basename(all_files))
+  
+  # Only process files that are in our cleaned metadata
   task_dt <- task_dt[filename %in% metadata$Filename]
   setorder(task_dt, filename)
   
-  cat("Total disease-mapped input files:", nrow(task_dt), "\n\n")
+  cat("Files to process (Matched Metadata):", nrow(task_dt), "\n\n")
   
-  # ---------------------------------------------------------------------------
-  # SECTION 1: DIGESTION -> digest_csv_gz/*.csv.gz  (parallel)
-  # ---------------------------------------------------------------------------
-  KEEP_INPUT_COLS_S1 <- c("sequence_alignment_aa", "v_call", "d_call", "j_call", "cdr3_aa")
-  S1_OUT_COLS <- c("Peptide", "Antibody", "v_call", "d_call", "j_call", "cdr3_aa")
+  # ===========================================================================
+  # SECTION 1: DIGESTION
+  # ===========================================================================
+  cat("=== SECTION 1: DIGESTION ===\n")
   
-  digest_one_to_csv_gz <- function(file_path, fn, ref_dt, out_dir, keep_cols) {
+  # Columns to read from input
+  KEEP_INPUT_COLS <- c("sequence_alignment_aa", "v_call", "d_call", "j_call", "cdr3_aa")
+  # Columns to write to output
+  S1_OUT_COLS <- c("Peptide", "Antibody", "v_call", "d_call", "j_call", "cdr3_aa", 
+                   "Start", "End", "Is_CDR3_Spanning")
+  
+  # Define the worker function
+  digest_worker <- function(file_path, fn, ref_dt, out_dir) {
     
-    tab <- arrow::read_csv_arrow(file_path, col_select = keep_cols)
-    if (!("sequence_alignment_aa" %in% names(tab))) stop("Missing sequence_alignment_aa in: ", fn)
+    # Read Arrow -> DT
+    tab <- arrow::read_csv_arrow(file_path, col_select = KEEP_INPUT_COLS)
+    dt  <- as.data.table(tab)
     
-    dt <- as.data.table(tab)
-    dt[, sequence_alignment_aa := as.character(sequence_alignment_aa)]
+    # Basic Cleaning
+    dt <- dt[!is.na(sequence_alignment_aa) & nzchar(sequence_alignment_aa)]
+    if (nrow(dt) == 0) return(invisible(TRUE)) # Empty file handled silently
     
-    for (cc in setdiff(keep_cols, "sequence_alignment_aa")) {
-      if (!cc %in% names(dt)) dt[, (cc) := NA_character_]
-    }
-    dt[, `:=`(
-      v_call  = as.character(v_call),
-      d_call  = as.character(d_call),
-      j_call  = as.character(j_call),
-      cdr3_aa = as.character(cdr3_aa)
-    )]
+    # Prepare unique sequences for digestion
+    # We map back later using 'sequence_alignment_aa' as the key
+    seq_vec <- unique(dt$sequence_alignment_aa)
     
-    seq_vec <- unique(dt$sequence_alignment_aa[!is.na(dt$sequence_alignment_aa) & nzchar(dt$sequence_alignment_aa)])
-    
-    out_file <- file.path(out_dir, fn)
-    tmp_file <- paste0(out_file, ".tmp_", Sys.getpid())
-    
-    if (!length(seq_vec)) {
-      out_dt <- data.table(Peptide=character(), Antibody=character(), v_call=character(),
-                           d_call=character(), j_call=character(), cdr3_aa=character())
-      fwrite(out_dt, tmp_file, sep = ",", compress = "gzip")
-      file.rename(tmp_file, out_file)
-      return(invisible(TRUE))
-    }
-    
+    # Biostrings / Cleaver Digestion
     aa  <- Biostrings::AAStringSet(stats::setNames(seq_vec, seq_vec))
     dig <- cleaver::cleave(aa, enzym = "trypsin", missedCleavages = 0:1, unique = TRUE)
     
+    # Expand Digestion Results
     lens    <- lengths(dig)
     pep_seq <- as.character(unlist(dig, use.names = FALSE))
-    pep_ab  <- rep.int(names(dig), lens)
-    out_dt  <- data.table(Peptide = pep_seq, Antibody = pep_ab)
+    pep_ab  <- rep.int(names(dig), lens) # The parent sequence
     
-    out_dt <- unique(out_dt[nchar(Peptide) > 4], by = c("Peptide", "Antibody"))
-    setkey(out_dt, Peptide)
-    out_dt <- out_dt[!ref_dt, on = "Peptide"]
-    setkey(out_dt, NULL)
+    # ----------------------------------------------------------
+    # CRITICAL UPDATE: Calculate Indices & CDR3 Overlap
+    # ----------------------------------------------------------
     
-    ann_dt <- unique(dt[
-      !is.na(sequence_alignment_aa) & nzchar(sequence_alignment_aa),
-      .(sequence_alignment_aa, v_call, d_call, j_call, cdr3_aa)
-    ], by = "sequence_alignment_aa")
-    setkey(ann_dt, sequence_alignment_aa)
+    # 1. Find Start Index (Vectorized)
+    # regexpr(fixed=TRUE) is fast and strictly literal
+    match_indices <- regexpr(pep_seq, pep_ab, fixed = TRUE)
+    starts <- as.integer(match_indices)
+    ends   <- starts + nchar(pep_seq) - 1
     
-    out_dt <- ann_dt[out_dt, on = c(sequence_alignment_aa = "Antibody")]
-    out_dt[, `:=`(Antibody = sequence_alignment_aa, sequence_alignment_aa = NULL)]
+    pep_dt <- data.table(
+      Peptide  = pep_seq,
+      Antibody = pep_ab,
+      Start    = starts,
+      End      = ends
+    )
     
-    for (cc in S1_OUT_COLS) if (!cc %in% names(out_dt)) out_dt[, (cc) := NA_character_]
-    out_dt <- out_dt[, ..S1_OUT_COLS]
+    # 2. Filter Filter
+    # Remove short peptides (< 6 AA)
+    pep_dt <- pep_dt[nchar(Peptide) >= 6]
+    # Remove UniProt Reference Peptides (Background filter)
+    setkey(pep_dt, Peptide)
+    pep_dt <- pep_dt[!ref_dt] # Anti-join
     
-    fwrite(out_dt, tmp_file, sep = ",", compress = "gzip")
-    file.rename(tmp_file, out_file)
+    # 3. Join back Metadata (V/D/J/CDR3)
+    # 'Antibody' col in pep_dt is the full sequence, which matches 'sequence_alignment_aa' in dt
+    dt_meta <- unique(dt[, .(sequence_alignment_aa, v_call, d_call, j_call, cdr3_aa)])
+    pep_dt <- dt_meta[pep_dt, on = c(sequence_alignment_aa = "Antibody")]
     
-    invisible(TRUE)
+    # Rename back for clarity
+    setnames(pep_dt, "sequence_alignment_aa", "Antibody")
+    
+    # 4. CDR3 Spanning Logic (Coordinate Overlap)
+    # Find where CDR3 is inside the Antibody
+    # We use regexpr again on the parent antibody to find the CDR3 location
+    cdr3_loc <- regexpr(pep_dt$cdr3_aa, pep_dt$Antibody, fixed = TRUE)
+    
+    pep_dt[, C_Start := as.integer(cdr3_loc)]
+    pep_dt[, C_End   := C_Start + nchar(cdr3_aa) - 1]
+    
+    # Overlap Logic: (PepStart <= CDR3End) AND (PepEnd >= CDR3Start)
+    # Also ensure CDR3 was actually found (C_Start > 0)
+    pep_dt[, Is_CDR3_Spanning := (Start <= C_End) & (End >= C_Start) & (C_Start > 0)]
+    
+    # Cleanup
+    pep_dt[is.na(Is_CDR3_Spanning), Is_CDR3_Spanning := FALSE]
+    
+    # Select Final Columns
+    pep_dt <- pep_dt[, ..S1_OUT_COLS]
+    
+    # Write Output
+    out_file <- file.path(out_dir, fn)
+    fwrite(pep_dt, out_file, sep = ",", compress = "gzip")
+    
+    return(invisible(TRUE))
   }
   
-  cat("========== PART2 / SECTION 1: DIGESTION -> CSV.GZ ==========\n")
-  cat("Output dir:", digest_csv_dir, "\n\n")
+  # Filter tasks for Section 1
+  processed_s1 <- readLines(logs$s1_proc, warn = FALSE)
+  s1_tasks <- task_dt
+  s1_tasks[, out_path := file.path(P$digest_csv_dir, filename)]
   
-  s1_tasks <- task_dt[, .(file_path, filename)]
-  s1_tasks[, out_path := file.path(digest_csv_dir, filename)]
-  
-  if (FORCE_REBUILD_S1) {
-    cat("FORCE_REBUILD_S1=TRUE: re-digest all files (will overwrite outputs).\n\n")
-  } else {
+  if (!FORCE_REBUILD_S1) {
     s1_tasks <- s1_tasks[!(filename %in% processed_s1 & file.exists(out_path))]
   }
   
-  cat("Section 1 files to digest now:", nrow(s1_tasks), "\n\n")
-  
-  if (nrow(s1_tasks) == 0) {
-    cat("Section 1: nothing to do.\n\n")
-  } else {
-    if (.Platform$OS.type == "windows") plan(multisession, workers = N_WORKERS) else plan(multicore, workers = N_WORKERS)
-    options(future.globals.maxSize = 10 * 1024^3)
+  if (nrow(s1_tasks) > 0) {
+    cat("Digesting", nrow(s1_tasks), "files...\n")
     
-    s1_results <- future_lapply(seq_len(nrow(s1_tasks)), function(i) {
-      fp <- s1_tasks$file_path[i]
+    # Parallel Execution
+    if (.Platform$OS.type == "windows") plan(multisession, workers = N_CORES) else plan(multicore, workers = N_CORES)
+    
+    res <- future_lapply(seq_len(nrow(s1_tasks)), function(i) {
       fn <- s1_tasks$filename[i]
-      ok <- TRUE
-      msg <- "ok"
+      fp <- s1_tasks$file_path[i]
       tryCatch({
-        digest_one_to_csv_gz(fp, fn, ref_dt, digest_csv_dir, KEEP_INPUT_COLS_S1)
+        digest_worker(fp, fn, ref_dt, P$digest_csv_dir)
+        return(list(fn = fn, ok = TRUE))
       }, error = function(e) {
-        ok  <<- FALSE
-        msg <<- conditionMessage(e)
+        return(list(fn = fn, ok = FALSE, msg = conditionMessage(e)))
       })
-      list(filename = fn, ok = ok, msg = msg)
     })
-    
     plan(sequential)
     
-    s1_res_dt <- rbindlist(s1_results, fill = TRUE)
-    s1_ok  <- s1_res_dt[ok == TRUE,  filename]
-    s1_bad <- s1_res_dt[ok == FALSE, filename]
-    
-    if (length(s1_ok))  cat(paste(s1_ok,  collapse = "\n"), "\n", file = processed_log_s1, append = TRUE, sep = "")
-    if (length(s1_bad)) cat(paste(s1_bad, collapse = "\n"), "\n", file = failed_log_s1,    append = TRUE, sep = "")
-    
-    cat(sprintf("\nSECTION 1 done. OK: %d | Failed: %d\n\n", length(s1_ok), length(s1_bad)))
-    if (length(s1_bad)) {
-      cat("First few Section 1 failures:\n")
-      print(s1_res_dt[ok == FALSE][1:min(10, .N)])
-    }
+    # Logging
+    ok_files <- sapply(res, function(x) if(x$ok) x$fn else NA)
+    ok_files <- na.omit(ok_files)
+    if(length(ok_files)) write(ok_files, logs$s1_proc, append = TRUE)
+    cat("S1 Done. OK:", length(ok_files), "\n")
+  } else {
+    cat("S1 Skipped (All done).\n")
   }
   
-  # ---------------------------------------------------------------------------
-  # SECTION 2: STAGING + COMPACTION
-  # ---------------------------------------------------------------------------
-  cat("========== PART2 / SECTION 2: STAGING + COMPACTION ==========\n")
-  cat("Input digest CSV dir:", digest_csv_dir, "\n")
-  cat("Staging root        :", staging_root, "\n")
-  cat("Final root          :", final_root, "\n\n")
+  # ===========================================================================
+  # SECTION 2: STAGING (CSV -> PARQUET)
+  # ===========================================================================
+  cat("\n=== SECTION 2: STAGING ===\n")
   
-  PARTITION_COLS <- c("Disease", "BSource", "BType", "Isotype")
-  PARQUET_WRITE_ARGS <- list(
-    compression = "zstd",
-    use_dictionary = TRUE,
-    write_statistics = TRUE,
-    chunk_size = 100000
-  )
+  # Identify Digested CSVs
+  dig_files <- list.files(P$digest_csv_dir, full.names = TRUE, pattern = "\\.csv\\.gz$")
+  s2_tasks  <- data.table(file_path = dig_files, filename = basename(dig_files))
   
-  S2_OUT_COLS <- c("Peptide","Antibody","v_call","d_call","j_call","cdr3_aa",
-                   "filename","Disease","BSource","BType","Isotype")
-  
-  coerce_schema_s2 <- function(dt) {
-    missing <- setdiff(S2_OUT_COLS, names(dt))
-    if (length(missing)) for (cc in missing) dt[, (cc) := NA_character_]
-    extra <- setdiff(names(dt), S2_OUT_COLS)
-    if (length(extra)) dt[, (extra) := NULL]
-    for (cc in S2_OUT_COLS) dt[, (cc) := as.character(dt[[cc]])]
-    dt[, ..S2_OUT_COLS]
-  }
-  
-  safe_folder_name <- function(x) gsub("[\\\\/:*?\"<>|]", "_", x)
-  
-  digest_files <- list.files(digest_csv_dir, pattern = "\\.csv\\.gz$", full.names = TRUE)
-  digest_dt <- data.table(file_path = digest_files, filename = basename(digest_files))
-  setorder(digest_dt, filename)
-  
-  cat("Digest CSV.GZ files found:", nrow(digest_dt), "\n\n")
-  
-  s2_tasks <- digest_dt
+  # Filter tasks
+  processed_s2 <- readLines(logs$s2_proc, warn = FALSE)
   if (!FORCE_REBUILD_S2) {
     s2_tasks <- s2_tasks[!(filename %in% processed_s2)]
-  } else {
-    cat("FORCE_REBUILD_S2=TRUE: will attempt to stage all digest files.\n\n")
   }
   
-  cat("Section 2 files to STAGE now:", nrow(s2_tasks), "\n\n")
-  
-  # 2A) Parallel staging
-  if (nrow(s2_tasks) == 0) {
-    cat("Section 2 staging: nothing to do.\n\n")
-  } else {
-    if (.Platform$OS.type == "windows") plan(multisession, workers = N_WORKERS) else plan(multicore, workers = N_WORKERS)
-    options(future.globals.maxSize = 10 * 1024^3)
+  if (nrow(s2_tasks) > 0) {
+    cat("Staging", nrow(s2_tasks), "files to Parquet...\n")
     
-    s2_results <- future_lapply(seq_len(nrow(s2_tasks)), function(i) {
-      fp <- s2_tasks$file_path[i]
+    # Define Worker for Staging
+    stage_worker <- function(fp, fn, meta_row, stage_root) {
+      # Read CSV
+      dt <- fread(fp)
+      
+      # Add Metadata for Partitioning
+      dt[, `:=`(
+        filename = fn,
+        Disease  = as.character(meta_row$Disease),
+        BSource  = as.character(meta_row$BSource),
+        BType    = as.character(meta_row$BType),
+        Isotype  = as.character(meta_row$Isotype)
+      )]
+      
+      # Write Partitioned Parquet
+      # Creates structure: /stage_root/file_XXX/Disease=Y/BSource=Z/...
+      # We partition by file first to avoid write conflicts
+      this_stage_dir <- file.path(stage_root, paste0("file_", fn))
+      
+      arrow::write_dataset(
+        dt, 
+        path = this_stage_dir, 
+        format = "parquet",
+        partitioning = c("Disease", "BSource", "BType", "Isotype"),
+        existing_data_behavior = "overwrite"
+      )
+    }
+    
+    # Parallel Staging
+    if (.Platform$OS.type == "windows") plan(multisession, workers = N_CORES) else plan(multicore, workers = N_CORES)
+    
+    res2 <- future_lapply(seq_len(nrow(s2_tasks)), function(i) {
       fn <- s2_tasks$filename[i]
+      fp <- s2_tasks$file_path[i]
       
+      # Get Metadata
       m <- metadata[J(fn)]
-      if (nrow(m) == 0) {
-        return(list(filename = fn, ok = FALSE, msg = paste0("No metadata row found (cannot partition): ", fn)))
-      }
-      m <- m[1]
+      if (nrow(m) == 0) return(list(fn = fn, ok = FALSE, msg = "No Metadata"))
       
-      stage_dir <- file.path(staging_root, paste0("file_", safe_folder_name(fn)))
-      dir.create(stage_dir, showWarnings = FALSE, recursive = TRUE)
-      
-      if (!FORCE_REBUILD_S2 &&
-          length(list.files(stage_dir, pattern = "\\.parquet$", recursive = TRUE)) > 0) {
-        return(list(filename = fn, ok = TRUE, msg = "staged_exists"))
-      }
-      
-      ok <- TRUE
-      msg <- "ok"
       tryCatch({
-        tab <- arrow::read_csv_arrow(fp)
-        dt  <- as.data.table(tab)
-        
-        dt[, filename := fn]
-        dt[, `:=`(
-          Disease = as.character(m$Disease),
-          BSource = as.character(m$BSource),
-          BType   = as.character(m$BType),
-          Isotype = as.character(m$Isotype)
-        )]
-        
-        dt <- coerce_schema_s2(dt)
-        
-        do.call(arrow::write_dataset, c(
-          list(
-            dataset = dt,
-            path = stage_dir,
-            format = "parquet",
-            partitioning = PARTITION_COLS,
-            existing_data_behavior = "overwrite"
-          ),
-          PARQUET_WRITE_ARGS
-        ))
+        stage_worker(fp, fn, m, P$staging_root)
+        return(list(fn = fn, ok = TRUE))
       }, error = function(e) {
-        ok  <<- FALSE
-        msg <<- conditionMessage(e)
+        return(list(fn = fn, ok = FALSE, msg = conditionMessage(e)))
       })
-      
-      list(filename = fn, ok = ok, msg = msg)
     })
-    
     plan(sequential)
     
-    s2_res_dt <- rbindlist(s2_results, fill = TRUE)
-    s2_ok  <- s2_res_dt[ok == TRUE,  filename]
-    s2_bad <- s2_res_dt[ok == FALSE, filename]
+    # Log
+    ok_files2 <- sapply(res2, function(x) if(x$ok) x$fn else NA)
+    ok_files2 <- na.omit(ok_files2)
+    if(length(ok_files2)) write(ok_files2, logs$s2_proc, append = TRUE)
+    cat("S2 Done. OK:", length(ok_files2), "\n")
     
-    if (length(s2_ok))  cat(paste(s2_ok,  collapse = "\n"), "\n", file = processed_log_s2, append = TRUE, sep = "")
-    if (length(s2_bad)) cat(paste(s2_bad, collapse = "\n"), "\n", file = failed_log_s2,    append = TRUE, sep = "")
-    
-    cat(sprintf("\nSECTION 2 staging done. OK: %d | Failed: %d\n\n", length(s2_ok), length(s2_bad)))
-    if (length(s2_bad)) {
-      cat("First few staging failures:\n")
-      print(s2_res_dt[ok == FALSE][1:min(10, .N)])
-    }
-  }
-  
-  cat("Staging dataset root:\n  ", staging_root, "\n\n", sep = "")
-  
-  # 2B) Compaction (DuckDB, sequential)
-  final_has_any <- dir.exists(final_root) && length(list.files(final_root, recursive = TRUE)) > 0
-  if (final_has_any && !FORCE_COMPACT) {
-    cat("Compaction SKIP: final_root already has data.\n")
-    cat("  ", final_root, "\n\n", sep = "")
   } else {
-    
-    if (final_has_any && FORCE_COMPACT) {
-      cat("FORCE_COMPACT=TRUE but final_root is not empty.\n")
-      cat("Recommendation: delete final_root before compaction to avoid mixing old/new:\n  ",
-          final_root, "\n\n", sep = "")
-    }
-    
-    cat("Starting compaction (DuckDB) -> final dataset:\n  ", final_root, "\n\n", sep = "")
-    
-    duckdb_temp_compact <- pjoin(work_root, "duckdb_temp_part2_compact")
-    dir.create(duckdb_temp_compact, showWarnings = FALSE, recursive = TRUE)
-    
-    conC <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-    on.exit(try(dbDisconnect(conC, shutdown = TRUE), silent = TRUE), add = TRUE)
-    
-    dbExecute(conC, sprintf("PRAGMA threads=%d;", DUCKDB_THREADS))
-    dbExecute(conC, sprintf("PRAGMA memory_limit='%s';", DUCKDB_MEM))
-    dbExecute(conC, sprintf("PRAGMA temp_directory='%s';", gsub("\\\\", "/", duckdb_temp_compact)))
-    dbExecute(conC, "PRAGMA enable_progress_bar=true;")
-    
-    staging_glob <- paste0(gsub("\\\\", "/", staging_root), "/**/*.parquet")
-    final_path   <- gsub("\\\\", "/", final_root)
-    
-    assert_no_backslash(staging_glob, "staging_glob")
-    assert_no_backslash(final_path, "final_path")
-    
-    sql_compact <- sprintf("
-      COPY (
-        SELECT *
-        FROM read_parquet('%s')
-      )
-      TO '%s'
-      (FORMAT PARQUET,
-       PARTITION_BY (Disease, BSource, BType, Isotype),
-       COMPRESSION ZSTD,
-       ROW_GROUP_SIZE %d);
-    ", staging_glob, final_path, ROW_GROUP_SIZE)
-    
-    dbExecute(conC, sql_compact)
-    
-    cat("Compaction finished.\nChecking final dataset...\n")
-    
-    if (final_dataset_ok(final_root)) {
-      cat("Final dataset verified (Parquet files found).\n")
-      cat("Final dataset root:\n  ", final_root, "\n\n", sep = "")
-      
-      if (dir.exists(staging_root)) {
-        cat("Removing staging directory to free disk space:\n  ",
-            staging_root, "\n", sep = "")
-        unlink(staging_root, recursive = TRUE, force = TRUE)
-      }
-      
-    } else {
-      cat("WARNING: Final dataset check FAILED. Staging preserved for debugging:\n  ",
-          staging_root, "\n\n", sep = "")
-    }
+    cat("S2 Skipped (All done).\n")
   }
   
-  # Optional sanity check (light)
-  cat("Sanity check: open final dataset (Arrow) and show schema preview\n")
-  ds_final <- arrow::open_dataset(final_root, format = "parquet")
-  glimpse(ds_final)
-  cat("\n")
+  # ===========================================================================
+  # SECTION 3: COMPACTION (DUCKDB)
+  # ===========================================================================
+  cat("\n=== SECTION 3: COMPACTION ===\n")
   
-  invisible(TRUE)
+  # Check if final exists
+  final_exists <- length(list.files(P$db_state1, pattern = "parquet", recursive = TRUE)) > 0
+  
+  if (final_exists && !FORCE_COMPACT) {
+    cat("Final DB exists. Skipping compaction.\n")
+  } else {
+    cat("Compacting Staging -> Final DB...\n")
+    
+    con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+    on.exit(dbDisconnect(con, shutdown = TRUE))
+    
+    dbExecute(con, paste0("PRAGMA memory_limit='", DUCKDB_MEMORY_LIMIT, "'"))
+    dbExecute(con, paste0("PRAGMA threads=", N_CORES))
+    
+    # Source pattern: all parquet files in staging
+    src_glob <- paste0(P$staging_root, "/**/*.parquet")
+    dest_path <- P$db_state1
+    
+    # SQL Copy
+    sql <- sprintf("
+      COPY (SELECT * FROM read_parquet('%s'))
+      TO '%s'
+      (FORMAT PARQUET, PARTITION_BY (Disease, BSource, BType, Isotype), 
+       COMPRESSION ZSTD, ROW_GROUP_SIZE %d)
+    ", src_glob, dest_path, ROW_GROUP_SIZE)
+    
+    tryCatch({
+      dbExecute(con, sql)
+      cat("Compaction Complete.\n")
+      
+      # Optional: Clean Staging
+      # unlink(P$staging_root, recursive = TRUE)
+      
+    }, error = function(e) {
+      cat("Compaction Failed:", conditionMessage(e), "\n")
+    })
+  }
+  
+  cat("\nPipeline Finished.\n")
 }
 
 main()
