@@ -1,0 +1,1 @@
+comm -23 <(sort bulk_download_human_unpaired_heavychain.sh) <(sort bulk_download_human_unpaired_heavychain_nonedisease.sh) > bulk_download_human_unpaired_heavychain_disease.sh
