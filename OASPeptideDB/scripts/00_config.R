@@ -15,7 +15,7 @@ DOWNLOAD_SHELL_SCRIPT <- "data/bulk_download.sh"
 RAW_DATA_DIR <- "D:/OAS/raw"
 
 # Where to save the cleaned, processed CSV.GZ files
-PROCESSED_DATA_DIR <- "D:/OAS/processed"
+PROCESSED_DATA_DIR <- "D:/OAS/download"
 
 # Where to save the tryptic peptide data (CSV.GZ file)
 TRYPTIC_DATA_DIR <- "D:/OAS/tryptic"
