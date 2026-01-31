@@ -2,7 +2,7 @@
 ## 00_config.R
 ##
 ## Single configuration file for the OAS Proteomics Workflow.
-## Source this at the top of your scripts: source("00_config.R")
+## Source this at the top of your scripts: source("scripts/00_config.R")
 ################################################################################
 
 # ==============================================================================
@@ -27,7 +27,7 @@ METADATA_FILE <- "D:/OAS/OAS_metadata.csv"
 PARQUET_DB_DIR <- "D:/OAS/parquet_db"
 
 # Where to store logs and temporary files
-WORK_DIR <- "E:/OAS_temp"
+WORK_DIR <- "D:/OAS/temp"
 
 # Reference file for filtering (Uniprot Tryptic Peptides)
 REF_PEPTIDE_RDATA <- "data/reference/uniprot_tryptic.RData"
@@ -41,6 +41,7 @@ N_CORES <- 6L
 
 # DuckDB settings for database compaction
 DUCKDB_MEMORY_LIMIT <- "40GB"
+ROW_GROUP_SIZE <- 1000000L
 
 
 # ==============================================================================
@@ -53,6 +54,7 @@ for (d in c(RAW_DATA_DIR, PROCESSED_DATA_DIR, PARQUET_DB_DIR, WORK_DIR, dirname(
 
 # Normalize paths for Windows/Linux compatibility
 norm_path <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
+pjoin <- function(...) norm_path(paste(..., sep = "/"))
 
 P <- list(
   shell_script    = norm_path(DOWNLOAD_SHELL_SCRIPT),
@@ -62,10 +64,17 @@ P <- list(
   metadata_csv    = norm_path(METADATA_FILE),
   parquet_dir     = norm_path(PARQUET_DB_DIR),
   work_dir        = norm_path(WORK_DIR),
+  
+  # Part 2 Specific Paths (Derived from WORK_DIR and PARQUET_DB_DIR)
+  work_root       = norm_path(WORK_DIR),
+  digest_csv_dir  = pjoin(WORK_DIR, "digest_csv_gz"),
+  log_dir         = pjoin(WORK_DIR, "Log_files"),
+  staging_root    = pjoin(PARQUET_DB_DIR, "_staging"),
+  final_db_dir    = pjoin(PARQUET_DB_DIR, "final"),
+  
   ref_rdata       = norm_path(REF_PEPTIDE_RDATA)
 )
 
-# Print status
 message("Configuration loaded.")
-message(" - Input Script: ", P$shell_script)
-message(" - Output DB:    ", P$parquet_dir)
+message(" - Processed Input: ", P$processed_dir)
+message(" - Final Output DB: ", P$final_db_dir)
