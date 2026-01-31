@@ -17,6 +17,9 @@ RAW_DATA_DIR <- "D:/OAS/raw"
 # Where to save the cleaned, processed CSV.GZ files
 PROCESSED_DATA_DIR <- "D:/OAS/processed"
 
+# Where to save the tryptic peptide data (CSV.GZ file)
+TRYPTIC_DATA_DIR <- "D:/OAS/tryptic"
+
 # Where to save the metadata CSV
 METADATA_FILE <- "D:/OAS/OAS_metadata.csv"
 
@@ -54,6 +57,7 @@ norm_path <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
 P <- list(
   shell_script    = norm_path(DOWNLOAD_SHELL_SCRIPT),
   raw_dir         = norm_path(RAW_DATA_DIR),
+  tryptic_dir     = norm_path(TRYPTIC_DATA_DIR),
   processed_dir   = norm_path(PROCESSED_DATA_DIR),
   metadata_csv    = norm_path(METADATA_FILE),
   parquet_dir     = norm_path(PARQUET_DB_DIR),
