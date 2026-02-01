@@ -17,7 +17,7 @@
 # ==============================================================================
 pipeline_scripts <- list(
   "Part1 – Download & preprocess OAS"          = "scripts/01_download.R"#,
-  #"Part2 – Digestion & Parquet DB build"       = "scripts/02_part2_digestion.R",
+  #"Part2 – Digestion & Parquet DB build"       = "scripts/02_digestion.R",
   #"Part3 – Disease presence"                   = "scripts/03_part3_disease_presence.R",
   #"Part4 – Peptide uniqueness"                 = "scripts/04_part4_peptide_uniqueness.R",
   #"Part5 – Peptide in CDR3"                    = "scripts/05_part5_cdr3.R",
