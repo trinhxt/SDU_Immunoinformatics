@@ -283,7 +283,7 @@ server <- function(input, output, session) {
   
   observe({
     cat("Checking for DB in:", getwd(), "\n")
-    candidates <- c("db_stage3", "OASpepDB")
+    candidates <- c("db_stage3", "OASpepDB", "OASpeptideDB")
     found_path <- NULL
     for (p in candidates) {
       if (dir.exists(p)) {
