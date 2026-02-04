@@ -1,14 +1,3 @@
-# ==============================================================================
-# DAT-DB Shiny Viewer (v4.4 - About Text Update)
-# ------------------------------------------------------------------------------
-# Features:
-# 1. Auto-loads "db_stage3" recursively.
-# 2. Implements filters: Disease, Metadata, Specificity, Uniqueness, Patients.
-# 3. CDR3 Spanning Filter.
-# 4. FASTA/CSV/Summary Export: Located below Live Summary.
-# 5. UI: Updated About tab with project description.
-# ==============================================================================
-
 suppressPackageStartupMessages({
   library(shiny)
   library(shinythemes)
@@ -131,7 +120,7 @@ ui <- fluidPage(
       div(class = "panel-container",
           div(class = "custom-header", "2. Clinical Filters"),
           selectInput("filter_disease", "Disease", choices = c("None"), selected = "None"),
-          selectInput("filter_bsource", "B-Cell Source", choices = "PBMC", selected = "PBMC"),
+          selectInput("filter_bsource", "B-Cell Source", choices = "All", selected = "All"),
           selectInput("filter_btype", "B-Cell Type", choices = "All", selected = "All"),
           selectInput("filter_isotype", "Isotype", choices = "All", selected = "All")
       ),
@@ -177,10 +166,11 @@ ui <- fluidPage(
         tabPanel("Data Preview", 
                  br(),
                  div(class = "panel-container",
-                     div(class = "custom-header", "Live Summary"),
+                     div(class = "custom-header", "4. Live Summary"),
                      uiOutput("summary_stats"),
                      hr(),
-                     h4("Download Results", style="font-size:14px; font-weight:bold; color:#555; margin-bottom:10px;"),
+                     # CHANGED: Styled same as Live Summary
+                     div(class = "custom-header", "5. Download Results"),
                      uiOutput("download_ui")
                  ),
                  div(class = "panel-container",
@@ -263,7 +253,7 @@ server <- function(input, output, session) {
         updateSelectInput(session, "filter_isotype", choices = c("All", iso$Isotype), selected = "All")
         
         bs <- dbGetQuery(con, "SELECT DISTINCT BSource FROM data WHERE BSource IS NOT NULL ORDER BY BSource")
-        updateSelectInput(session, "filter_bsource", choices = c("All", bs$BSource), selected = "PBMC")
+        updateSelectInput(session, "filter_bsource", choices = c("All", bs$BSource), selected = "All")
         
         bt <- dbGetQuery(con, "SELECT DISTINCT BType FROM data WHERE BType IS NOT NULL ORDER BY BType")
         updateSelectInput(session, "filter_btype", choices = c("All", bt$BType), selected = "All")
@@ -426,26 +416,43 @@ server <- function(input, output, session) {
     )
   })
   
-  # --- 1. CSV Download ---
+  # --- 1. CSV Download (Modified with Live Progress) ---
   output$dl_csv <- downloadHandler(
     filename = function() { paste0("OAS_Export_", Sys.Date(), ".csv") },
     content = function(file) {
-      withProgress(message = "Exporting CSV...", value = 0.1, {
+      withProgress(message = "Preparing CSV...", value = 0, {
+        
+        # 1. Count Rows first
+        incProgress(0.1, detail = "Calculating total row count...")
+        count_sql <- get_sql_query(count_only = TRUE)
+        n_rows <- tryCatch(dbGetQuery(con, count_sql)$n, error = function(e) 0)
+        
+        # 2. Update Message
+        incProgress(0.3, detail = paste("Exporting", fmt_int(n_rows), "rows to CSV..."))
+        
+        # 3. Execute Copy (Native DuckDB is fast)
         sql <- get_sql_query()
-        incProgress(0.2, detail = "Executing DuckDB COPY command...")
         tmp_sql <- sprintf("COPY (%s) TO '%s' (FORMAT CSV, HEADER)", sql, norm_path(file))
         dbExecute(con, tmp_sql)
-        incProgress(0.7, detail = "Done.")
+        
+        incProgress(0.9, detail = "Finalizing file...")
       })
     }
   )
   
-  # --- 2. FASTA Download ---
+  # --- 2. FASTA Download (Modified with Live Progress) ---
   output$dl_fasta <- downloadHandler(
     filename = function() { paste0("OAS_Export_", Sys.Date(), ".fasta") },
     content = function(file) {
-      withProgress(message = "Generating FASTA...", value = 0, {
-        incProgress(0.2, detail = "Fetching data from DB...")
+      withProgress(message = "Preparing FASTA...", value = 0, {
+        
+        # 1. Count First
+        incProgress(0.1, detail = "Calculating counts...")
+        count_sql <- get_sql_query(count_only = TRUE)
+        counts <- tryCatch(dbGetQuery(con, count_sql), error = function(e) list(n=0, n_pep=0))
+        
+        # 2. Fetch with count info
+        incProgress(0.2, detail = paste("Fetching", fmt_int(counts$n), "rows from DB..."))
         sql <- get_sql_query()
         df <- dbGetQuery(con, sql)
         
@@ -454,13 +461,15 @@ server <- function(input, output, session) {
           return()
         }
         
-        incProgress(0.4, detail = "Aggregating unique peptides...")
+        # 3. Aggregate with count info
+        incProgress(0.5, detail = paste("Aggregating", fmt_int(counts$n_pep), "unique sequences..."))
         dt <- as.data.table(df)
         dt_agg <- dt[, .(All_Filenames = paste(unique(filename), collapse = ";")), by = Peptide]
         dt_agg[, N := .I]
         dt_agg[, header := paste0("pep_", N, "|", All_Filenames, "|")]
         
-        incProgress(0.3, detail = "Writing file...")
+        # 4. Write
+        incProgress(0.8, detail = "Writing FASTA to disk...")
         if (nrow(dt_agg) > 0) {
           seqs <- AAStringSet(dt_agg$Peptide)
           names(seqs) <- dt_agg$header
@@ -468,7 +477,7 @@ server <- function(input, output, session) {
         } else {
           writeLines("No sequences to export.", file)
         }
-        incProgress(0.1, detail = "Done.")
+        incProgress(1, detail = "Done.")
       })
     }
   )
