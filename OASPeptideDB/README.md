@@ -9,10 +9,17 @@ This repository provides an R-based pipeline to download, process, digest, and o
 Follow these steps to set up the environment and run the database build pipeline.
 
 ### 1. Installation
-
-1.  Clone the repository: `bash     git clone [https://github.com/SDU_Immunoinformatics/OASpeptideDB.git](https://github.com/SDU_Immunoinformatics/OASpeptideDB.git)     cd OASpeptideDB`
+1.  Clone the repository:
+    ```bash
+    git clone [https://github.com/SDU_Immunoinformatics/OASpeptideDB.git](https://github.com/SDU_Immunoinformatics/OASpeptideDB.git)
+    cd OASpeptideDB
+    ```
 2.  Open R in the project directory.
-3.  Install all required packages (this ensures reproducibility): `r     renv::restore()`
+3.  **Linux Users Only:** Install system dependencies (e.g., `libcurl`, `openssl`, `libxml2`) or configure your R to use [Posit Package Manager](https://packagemanager.posit.co/client/#/) binaries to avoid compilation errors.
+4.  Install all required packages:
+    ```r
+    renv::restore()
+    ```
 
 ### 2. Configuration
 
