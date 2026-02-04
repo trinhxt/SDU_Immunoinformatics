@@ -1,46 +1,53 @@
 ################################################################################
 ## DBbuild.R
 ##
-## Run selected pipeline scripts sequentially (Part1 → Part7).
+## Goal: Run the full DAT-DB build pipeline sequentially.
 ##
-## How to use
-## ----------
-## 1) Edit the `pipeline_scripts` list below.
-## 2) Comment out any lines you DON'T want to run.
-## 3) Run:
-##      source("DBbuild.R")
+## Prerequisite:
+##   - Ensure 'scripts/00_config.R' is set up correctly.
+##   - Ensure renv is active (renv::restore() if needed).
 ##
+## How to use:
+##   1. Comment/Uncomment lines in `pipeline_scripts` to select steps.
+##   2. Run: source("DBbuild.R")
 ################################################################################
 
 # ==============================================================================
-# 1) Choose which scripts to run (comment out any you want to skip)
+# 1) Pipeline Definition
+#    (Comment out lines with '#' to skip specific steps)
 # ==============================================================================
 pipeline_scripts <- list(
-  "Part1 – Download & preprocess OAS"          = "scripts/01_download.R"#,
-  #"Part2 – Digestion & Parquet DB build"       = "scripts/02_digestion.R",
-  #"Part3 – Disease presence"                   = "scripts/03_part3_disease_presence.R",
-  #"Part4 – Peptide uniqueness"                 = "scripts/04_part4_peptide_uniqueness.R",
-  #"Part5 – Peptide in CDR3"                    = "scripts/05_part5_cdr3.R",
-  #"Part6 – Zenodo PeptideDB bundle"            = "scripts/06_part6_zenodo_bundle.R",
-  #"Part7 – QC check of part 6"                 = "scripts/07_part7_QC_final_enriched.R"
+  
+  # --- Setup & Acquisition ---
+  "Step 1: Download & Preprocess OAS"      = "scripts/01_download.R",
+  
+  # --- Processing ---
+  "Step 2: Tryptic Digestion"              = "scripts/02_digestion.R",
+  
+  # --- Database Construction ---
+  "Step 3: Build Fact Table (db_stage1)"   = "scripts/03_build_fact_table.R",
+  "Step 4: Build Dimension/Metrics (db_stage2)" = "scripts/04_build_dimension_table.R",
+  "Step 5: Combine & Finalize (db_stage3)" = "scripts/05_combine_db.R"
 )
 
 # ==============================================================================
-# 2) Runner (fail-fast)
+# 2) Runner Function (Fail-Fast)
 # ==============================================================================
 run_step <- function(step_name, script_path) {
   cat("\n============================================================\n")
   cat(">>> Running:", step_name, "\n")
   cat("Script     :", script_path, "\n")
+  cat("Start Time :", format(Sys.time(), "%H:%M:%S"), "\n")
   cat("============================================================\n\n")
   
   if (!file.exists(script_path)) {
-    stop(sprintf("❌ FAILED: script not found: %s", script_path))
+    stop(sprintf("❌ FAILED: Script file not found: %s", script_path))
   }
   
+  # Run the script in the global environment
   ok <- tryCatch(
     {
-      source(script_path, local = TRUE)
+      source(script_path, local = FALSE)
       TRUE
     },
     error = function(e) {
@@ -54,28 +61,29 @@ run_step <- function(step_name, script_path) {
   )
   
   if (!isTRUE(ok)) {
-    stop(sprintf("Pipeline stopped at: %s", step_name))
+    stop(sprintf("Pipeline stopped due to error in: %s", step_name))
   }
   
-  cat(sprintf("\n✅ Completed: %s\n\n", step_name))
+  cat(sprintf("\n✅ Completed: %s\n", step_name))
   invisible(TRUE)
 }
 
 # ==============================================================================
-# 3) Execute
+# 3) Execution Loop
 # ==============================================================================
 if (length(pipeline_scripts) == 0) {
-  stop("pipeline_scripts is empty. Add at least one script to run.")
+  stop("pipeline_scripts list is empty. Please uncomment at least one step.")
 }
 
 cat("\n============================================================\n")
-cat("Pipeline start\n")
-cat("Scripts to run:\n")
+cat("🚀 STARTING PIPELINE \n")
+cat("The following steps will be executed:\n")
 for (nm in names(pipeline_scripts)) {
-  cat(" - ", nm, "  (", pipeline_scripts[[nm]], ")\n", sep = "")
+  cat(" - ", nm, "  [", pipeline_scripts[[nm]], "]\n", sep = "")
 }
 cat("============================================================\n\n")
 
+# Iterate through selected scripts
 for (nm in names(pipeline_scripts)) {
   run_step(nm, pipeline_scripts[[nm]])
 }
