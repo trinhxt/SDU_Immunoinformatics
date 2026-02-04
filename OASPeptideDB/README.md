@@ -4,6 +4,32 @@
 
 This repository provides an R-based pipeline to download, process, digest, and organize antibody repertoire data into a high-performance Parquet/DuckDB database.
 
+## 🚀 Quick Start
+
+Follow these steps to set up the environment and run the database build pipeline.
+
+### 1. Installation
+1.  Clone the repository:
+    ```bash
+    git clone [https://github.com/SDU_Immunoinformatics/OASpeptideDB.git](https://github.com/SDU_Immunoinformatics/OASpeptideDB.git)
+    cd OASpeptideDB
+    ```
+2.  Open R in the project directory.
+3.  Install all required packages (this ensures reproducibility):
+    ```r
+    renv::restore()
+    ```
+
+### 2. Configuration
+Open `scripts/00_config.R` and update the directory paths to match your local system (e.g., where to store raw downloads and the final database).
+
+### 3. Run the Pipeline
+Execute the master build script to run the entire workflow:
+```r
+source("DBbuild.R")
+
+
+
 ## Pipeline Overview
 
 The workflow follows a staged build process managed by `DBbuild.R`, transforming raw OAS data into an optimized analytical database.
