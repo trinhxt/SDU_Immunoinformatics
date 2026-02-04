@@ -27,7 +27,7 @@ Open `scripts/00_config.R` and update the directory paths to match your local sy
 Execute the master build script to run the entire workflow:
 ```r
 source("DBbuild.R")
-
+```
 
 
 ## Pipeline Overview
