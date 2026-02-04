@@ -4,82 +4,71 @@
 
 This repository provides an R-based pipeline to download, process, digest, and organize antibody repertoire data into a high-performance Parquet/DuckDB database.
 
-## 🚀 Quick Start
+## Quick Start
 
 Follow these steps to set up the environment and run the database build pipeline.
 
 ### 1. Installation
-1.  Clone the repository:
-    ```bash
-    git clone [https://github.com/SDU_Immunoinformatics/OASpeptideDB.git](https://github.com/SDU_Immunoinformatics/OASpeptideDB.git)
-    cd OASpeptideDB
-    ```
+
+1.  Clone the repository: `bash     git clone [https://github.com/SDU_Immunoinformatics/OASpeptideDB.git](https://github.com/SDU_Immunoinformatics/OASpeptideDB.git)     cd OASpeptideDB`
 2.  Open R in the project directory.
-3.  Install all required packages (this ensures reproducibility):
-    ```r
-    renv::restore()
-    ```
+3.  Install all required packages (this ensures reproducibility): `r     renv::restore()`
 
 ### 2. Configuration
+
 Open `scripts/00_config.R` and update the directory paths to match your local system (e.g., where to store raw downloads and the final database).
 
 ### 3. Run the Pipeline
+
 Execute the master build script to run the entire workflow:
-```r
+
+``` r
 source("DBbuild.R")
 ```
-
 
 ## Pipeline Overview
 
 The workflow follows a staged build process managed by `DBbuild.R`, transforming raw OAS data into an optimized analytical database.
 
 ### 1. Configuration (`00_config.R`)
-* Centralizes file paths, computational settings, and helper functions.
-* Defines directories for raw data, processed files, and final database output.
+
+-   Centralizes file paths, computational settings, and helper functions.
+-   Defines directories for raw data, processed files, and final database output.
 
 ### 2. Data Acquisition (`01_download.R`)
-* Downloads antibody repertoires from OAS.
-* Extracts metadata (Patient, Disease, Isotype) from JSON headers.
-* Standardizes data into compressed CSV format (`.csv.gz`).
-* Skips files that have already been downloaded.
+
+-   Downloads antibody repertoires from OAS.
+-   Extracts metadata (Patient, Disease, Isotype) from JSON headers.
+-   Standardizes data into compressed CSV format (`.csv.gz`).
+-   Skips files that have already been downloaded.
 
 ### 3. Tryptic Digestion (`02_digestion.R`)
-* Performs *in silico* tryptic digestion using the `cleaver` library.
-* Removes peptides < 6 amino acids.
-* Filters out non-specific peptides found in the human reference proteome (UniProt/NCBI).
-* Processes only disease-associated samples (excludes “None”).
 
-## Database Architecture
+-   Performs *in silico* tryptic digestion using the `cleaver` library.
+-   Removes peptides \< 6 amino acids.
+-   Filters out non-specific peptides found in the human reference proteome (UniProt/NCBI).
+-   Processes only disease-associated samples (excludes “None”).
+
+### 4. Database Architecture
 
 The database is constructed in three stages to efficiently handle billions of rows using **DuckDB** and **Apache Arrow**.
 
-### Stage 1: Fact Table (`03_build_fact_table.R`)
-* Joins peptides with clinical metadata.
-* Calculates peptide overlap with the CDR3 region.
-* Physically partitions data by **Disease**, **BSource**, **BType**, and **Isotype**.
+#### 4.1. Stage 1: Fact Table (`03_build_fact_table.R`)
 
-### Stage 2: Dimension Table (`04_build_dimension_table.R`)
-* Aggregates global peptide metrics.
-* Computes distinct counts (Diseases, Patients, Antibodies) per peptide.
-* Uses hash-based partitioning to optimize joins.
+-   Joins peptides with clinical metadata.
+-   Calculates peptide overlap with the CDR3 region.
+-   Physically partitions data by **Disease**, **BSource**, **BType**, and **Isotype**.
 
-### Stage 3: Denormalized Database (`05_combine_db.R`)
-* Merges observation and metric tables into a single flat dataset.
-* Outputs a fully denormalized Parquet database.
-* Supports resumable builds by disease partition.
+#### 4.2. Stage 2: Dimension Table (`04_build_dimension_table.R`)
 
-## Getting Started
+-   Aggregates global peptide metrics.
+-   Computes distinct counts (Diseases, Patients, Antibodies) per peptide.
+-   Uses hash-based partitioning to optimize joins.
 
-1.  **Install dependencies**
-    * Ensure R is installed.
-    * Required packages are managed via `renv`.
+#### 4.3. Stage 3: Denormalized Database (`05_combine_db.R`)
 
-2.  **Configure paths**
-    * Edit `scripts/00_config.R` to set your local directory paths.
+-   Merges observation and metric tables into a single flat dataset.
+-   Outputs a fully denormalized Parquet database.
+-   Supports resumable builds by disease partition.
 
-3.  **Run the pipeline**
-    ```r
-    source("DBbuild.R")
-    ```
-    *Individual steps can be disabled in `DBbuild.R` if needed.*
+## 
