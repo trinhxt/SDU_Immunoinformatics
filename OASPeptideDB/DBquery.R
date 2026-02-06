@@ -1,85 +1,116 @@
+# ==============================================================================
+# DAT-DB: Disease-exclusive Antibody Tryptic Peptide Database Viewer
+# ==============================================================================
+# This Shiny application acts as a GUI for exploring antibody peptide data.
+# Key Features:
+# 1. Connects to a local DuckDB instance to query Parquet files efficiently.
+# 2. Provides dynamic filtering for Diseases, B-Cell types, and Specificity logic.
+# 3. Generates live summary statistics and data previews.
+# 4. Exports filtered data to CSV, FASTA, and Summary Text reports.
+# ==============================================================================
+
 suppressPackageStartupMessages({
+  # Core Shiny libraries for UI and Server logic
   library(shiny)
-  library(shinythemes)
-  library(shinyjs)
-  library(DBI)
-  library(duckdb)
-  library(DT)
-  library(shinyFiles)
-  library(data.table)
-  library(Biostrings)
+  library(shinythemes)   # For the "cerulean" visual theme
+  library(shinyjs)       # For JavaScript operations (hide/show elements)
+  library(shinyWidgets)  # For alerts and enhanced UI inputs
+  library(shinyBS)       # For Bootstrap Tooltips/Popovers (Info Icons)
+  
+  # Data Handling & Database libraries
+  library(DBI)           # Standard Database Interface
+  library(duckdb)        # High-performance in-process SQL database (OLAP)
+  library(DT)            # For interactive DataTables
+  library(data.table)    # For fast data manipulation
+  
+  # System & Biology libraries
+  library(shinyFiles)    # For OS-native file/folder selection dialogs
+  library(Biostrings)    # For handling biological sequences (writing FASTA)
+  library(svDialogs)     # For system save dialogs
 })
 
-# -------------------------
-# Helpers
-# -------------------------
-norm_path <- function(p) {
-  normalizePath(p, winslash = "/", mustWork = FALSE)
-}
+# --- Helper Functions ---
 
-fmt_int <- function(x) {
-  if (is.null(x) || is.na(x)) return("0")
-  format(as.numeric(x), big.mark = ",", scientific = FALSE)
-}
+# Normalizes file paths to use forward slashes (Windows compatibility)
+norm_path <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
 
-# --- Disease Mapping Dictionary ---
+# Formats integers with commas (e.g., 1,000,000)
+fmt_int <- function(x) format(as.numeric(x), big.mark = ",", scientific = FALSE)
+
+# Custom NULL coalescing operator: if 'a' is not NULL return 'a', else return 'b'
+`%||%` <- function(a, b) if (!is.null(a)) a else b
+
+# ==============================================================================
+# 1. DATA DICTIONARY
+# ==============================================================================
+# Maps short internal disease codes (keys) to readable full names (values).
 disease_code_to_full <- c(
-  "AChR-MG"                           = "Acetylcholine receptor-positive myasthenia gravis",
-  "Allergic-Rhinitis-In-Season"       = "Allergic rhinitis in season",
-  "Allergic-Rhinitis-Out-Of-Season"   = "Allergic rhinitis out of season",
-  "Allergy%2FNoSIT"                   = "Allergy NoSIT",
-  "Allergy/NoSIT"                     = "Allergy NoSIT",
-  "Allergy%2FSIT"                     = "Allergy SIT",
-  "Allergy/SIT"                       = "Allergy SIT",
-  "Asthma"                            = "Asthma",
-  "CLL"                               = "Chronic lymphocytic leukemia",
-  "CMV"                               = "Cytomegalovirus",
-  "CMV%2FEBV"                         = "Cytomegalovirus/Epstein–Barr virus",
-  "CMV/EBV"                           = "Cytomegalovirus/Epstein–Barr virus",
-  "Dengue"                            = "Dengue",
-  "Ebola"                             = "Ebola",
-  "EBV"                               = "Epstein–Barr virus",
-  "HCV"                               = "Hepatitis C virus",
-  "Healthy%2Fceliac-disease"          = "Celiac",
-  "Healthy/celiac-disease"            = "Celiac",
-  "HIV"                               = "HIV",
-  "Light-Chain-Amyloidosis"           = "Light chain amyloidosis",
-  "MS"                                = "Multiple sclerosis",
-  "MuSK-MG"                           = "Muscle-specific kinase myasthenia gravis",
-  "Non-Dengue-Febrile-Illness"        = "Non-dengue febrile illness",
-  "Obstructive-Sleep-Apnea"           = "Obstructive sleep apnea",
-  "SARS-COV-2"                        = "SARS-COV-2",
-  "SLE"                               = "Systemic lupus erythematosus",
-  "Tonsillitis"                       = "Tonsillitis",
+  "AChR-MG"                         = "Acetylcholine receptor-positive myasthenia gravis",
+  "Allergic-Rhinitis-In-Season"     = "Allergic rhinitis in season",
+  "Allergic-Rhinitis-Out-Of-Season" = "Allergic rhinitis out of season",
+  "Allergy%2FNoSIT"                 = "Allergy NoSIT",
+  "Allergy/NoSIT"                   = "Allergy NoSIT",
+  "Allergy%2FSIT"                   = "Allergy SIT",
+  "Allergy/SIT"                     = "Allergy SIT",
+  "Asthma"                          = "Asthma",
+  "CLL"                             = "Chronic lymphocytic leukemia",
+  "CMV"                             = "Cytomegalovirus",
+  "CMV%2FEBV"                       = "Cytomegalovirus/Epstein–Barr virus",
+  "CMV/EBV"                         = "Cytomegalovirus/Epstein–Barr virus",
+  "Dengue"                          = "Dengue",
+  "Ebola"                           = "Ebola",
+  "EBV"                             = "Epstein–Barr virus",
+  "HCV"                             = "Hepatitis C virus",
+  "Healthy%2Fceliac-disease"        = "Celiac",
+  "Healthy/celiac-disease"          = "Celiac",
+  "HIV"                             = "HIV",
+  "Light-Chain-Amyloidosis"         = "Light chain amyloidosis",
+  "MS"                              = "Multiple sclerosis",
+  "MuSK-MG"                         = "Muscle-specific kinase myasthenia gravis",
+  "Non-Dengue-Febrile-Illness"      = "Non-dengue febrile illness",
+  "Obstructive-Sleep-Apnea"         = "Obstructive sleep apnea",
+  "SARS-COV-2"                      = "SARS-COV-2",
+  "SLE"                             = "Systemic lupus erythematosus",
+  "Tonsillitis"                     = "Tonsillitis",
   "Tonsillitis%2FObstructive-Sleep-Apnea" = "Tonsillitis/Obstructive sleep apnea",
   "Tonsillitis/Obstructive-Sleep-Apnea"   = "Tonsillitis/Obstructive sleep apnea"
 )
 
+# Helper to look up disease names safely, handling URL encoding
 get_full_disease_name <- function(code) {
-  if (is.null(code) || code %in% c("None", "All")) return(code)
-  if (code %in% names(disease_code_to_full)) return(disease_code_to_full[[code]])
-  decoded <- tryCatch(utils::URLdecode(code), error = function(e) code)
+  val <- if (length(code) > 0) code[1] else "None"
+  if (is.null(val) || val %in% c("None", "All")) return(val)
+  
+  # Direct match
+  if (val %in% names(disease_code_to_full)) return(disease_code_to_full[[val]])
+  
+  # Try decoding URL characters (e.g., %2F -> /)
+  decoded <- tryCatch(utils::URLdecode(val), error = function(e) val)
   if (decoded %in% names(disease_code_to_full)) return(disease_code_to_full[[decoded]])
-  return(decoded)
+  
+  return(decoded) # Return original if no match found
 }
 
-# -------------------------
-# UI
-# -------------------------
+# ==============================================================================
+# 2. USER INTERFACE (UI)
+# ==============================================================================
 ui <- fluidPage(
-  useShinyjs(),
-  theme = shinytheme("cerulean"),
+  useShinyjs(), # Initialize JavaScript capabilities
+  theme = shinytheme("cerulean"), # Set global CSS theme
   
+  # --- Custom CSS Styles ---
   tags$head(tags$style(HTML("
-    body { font-family: Arial, sans-serif; }
+    /* General Panel Styling */
     .panel-container { 
       border: 1px solid #ddd; 
       padding: 15px; 
       border-radius: 5px; 
       background: #fcfcfc; 
       margin-bottom: 15px; 
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
     }
+    
+    /* Section Headers */
     .custom-header { 
       font-size: 16px; 
       font-weight: bold; 
@@ -88,167 +119,213 @@ ui <- fluidPage(
       margin-bottom: 15px; 
       color: #333; 
     }
-    .status-ok { color: green; font-weight: bold; }
-    .status-err { color: red; font-weight: bold; }
+    
+    /* Summary Stats Formatting */
     .summary-stat { 
       font-size: 13px; 
-      margin-bottom: 2px; 
-      color: #444;
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 1px dotted #eee;
+      margin-bottom: 4px; 
+      color: #444; 
+      display: flex; 
+      justify-content: space-between; 
+      border-bottom: 1px dotted #eee; 
     }
-    .summary-stat strong { color: #222; margin-right: 10px; text-align: right;}
+    .summary-stat strong { 
+      color: #222; 
+      margin-right: 10px; 
+      text-align: right; 
+      max-width: 60%; 
+    }
+    
+    /* Buttons */
     .btn-download { width: auto; margin-right: 10px; margin-bottom: 5px; }
+    
+    /* Status Messages */
+    .status-ok { color: green; font-weight: bold; }
+    .status-err { color: red; font-weight: bold; }
+    
+    /* Tooltip Icon Style */
+    .info-icon { 
+      color: #007bc2; 
+      font-size: 0.9em; 
+      margin-left: 5px; 
+      cursor: help; 
+    }
+    
+    /* [NEW] FIXED TOOLTIP WIDTH (Aggressive Override) */
+    /* using 'body' prefix ensures this overrides the theme defaults */
+    body .tooltip-inner {
+      background-color: #ffffff !important;   /* White background */
+      color: #333333 !important;              /* Dark text */
+      border: 1px solid #cccccc;              /* Border */
+      box-shadow: 0 4px 15px rgba(0,0,0,0.15); /* Shadow */
+      
+      /* WIDTH SETTINGS */
+      min-width: 250px !important;            /* Ensure it is never too small */
+      max-width: 600px !important;            /* Allow it to be very wide */
+      
+      font-size: 13px;
+      padding: 12px;
+      text-align: left;
+    }
+    
+    /* Arrow color fix */
+    body .tooltip.right .tooltip-arrow {
+      border-right-color: #cccccc !important; 
+    }
+    body .tooltip {
+      opacity: 1 !important; 
+    }
   "))),
   
-  titlePanel(HTML("<strong>DAT-DB</strong>: Disease-Specific Antibody Peptide Database")),
+  # --- App Title ---
+  titlePanel(HTML("<strong>DAT-DB</strong>: <strong>D</strong>isease-exclusive <strong>A</strong>ntibody <strong>T</strong>rypic peptide <strong>D</strong>atabase for <strong>B</strong>ottom-up proteomics")),
   
   sidebarLayout(
-    sidebarPanel(
-      width = 3,
-      
-      # --- 1. Data Selection ---
-      div(class = "panel-container",
-          div(class = "custom-header", "1. Database Source"),
-          uiOutput("db_status_ui"),
-          hidden(shinyDirButton("db_folder_btn", "Browse Folder", 
-                                "Select the 'db_stage3' folder"))
-      ),
-      
-      # --- 2. Clinical Filters ---
-      div(class = "panel-container",
-          div(class = "custom-header", "2. Clinical Filters"),
-          selectInput("filter_disease", "Disease", choices = c("None"), selected = "None"),
-          selectInput("filter_bsource", "B-Cell Source", choices = "All", selected = "All"),
-          selectInput("filter_btype", "B-Cell Type", choices = "All", selected = "All"),
-          selectInput("filter_isotype", "Isotype", choices = "All", selected = "All")
-      ),
-      
-      # --- 3. Advanced Logic Filters ---
-      div(class = "panel-container",
-          div(class = "custom-header", "3. Specificity & Quality"),
-          
-          # CDR3 Spanning Filter
-          radioButtons("logic_cdr3", "CDR3 Spanning",
-                       choices = c("All" = "all",
-                                   "None (0 AA)" = "none",
-                                   "Low (1-3 AA)" = "low",
-                                   "High (>3 AA)" = "high"),
-                       selected = "high"),
-          
-          # Disease Specificity
-          radioButtons("logic_specificity", "Disease Specificity",
-                       choices = c("All" = "all",
-                                   "Disease-Specific (N_Diseases=1)" = "specific",
-                                   "Shared (N_Diseases>1)" = "shared"),
-                       selected = "specific"),
-          
-          # Uniqueness
-          radioButtons("logic_uniqueness", "Peptide Uniqueness",
-                       choices = c("All" = "all",
-                                   "Unique (N_Antibodies=1)" = "unique",
-                                   "Common (N_Antibodies>1)" = "common"),
-                       selected = "all"),
-          
-          # Patient Count
-          radioButtons("logic_patients", "Patient Frequency",
-                       choices = c("All" = "all",
-                                   "Singleton (N_Patients=1)" = "single",
-                                   "Recurring (N_Patients>1)" = "multi"),
-                       selected = "multi")
-      )
+    # --- Sidebar Panel (Inputs) ---
+    sidebarPanel(width = 3,
+                 # Section 1: Database Connection
+                 div(class = "panel-container",
+                     div(class = "custom-header", "1. Database Source"),
+                     uiOutput("db_status_ui"), # Shows green check or red error
+                     hidden(actionButton("db_folder_btn", "Browse Folder", icon = icon("folder-open"))) # Hidden if DB loads automatically
+                 ),
+                 
+                 # Section 2: Primary Filters (Metadata)
+                 div(class = "panel-container",
+                     div(class = "custom-header", "2. Clinical Filters"),
+                     selectInput("filter_disease", "Disease", choices = c("None"), selected = "None"),
+                     selectInput("filter_bsource", "B-Cell Source", choices = "All", selected = "All"),
+                     selectInput("filter_btype", "B-Cell Type", choices = "All", selected = "All"),
+                     selectInput("filter_isotype", "Isotype", choices = "All", selected = "All")
+                 ),
+                 
+                 # Section 3: Logic Filters (Calculated fields) with Info Tooltips
+                 div(class = "panel-container",
+                     div(class = "custom-header", "3. Specificity & Quality"),
+                     
+                     # --- CDR3 Spanning with Tooltip ---
+                     radioButtons("logic_cdr3", 
+                                  label = tagList(
+                                    "CDR3 Spanning",
+                                    tags$span(id = "tip_cdr3", icon("info-circle"), class = "info-icon"),
+                                    bsTooltip("tip_cdr3", "Number of amino acids overlapping the CDR3 hypervariable region. High overlap (>3 AA) increases confidence in specific antibody identification.", placement = "right", trigger = "hover")
+                                  ),
+                                  choices = c("All"="all","None (0 AA)"="none","Low (1-3 AA)"="low","High (>3 AA)"="high"), selected = "high"),
+                     
+                     # --- Disease Specificity with Tooltip ---
+                     radioButtons("logic_specificity", 
+                                  label = tagList(
+                                    "Disease Specificity",
+                                    tags$span(id = "tip_spec", icon("info-circle"), class = "info-icon"),
+                                    bsTooltip("tip_spec", "Disease-Exclusive: Peptide found ONLY in this disease. Shared: Peptide found in this disease AND others.", placement = "right", trigger = "hover")
+                                  ), 
+                                  choices = c("All"="all","Disease-Exclusive"="specific","Shared"="shared"), selected = "specific"),
+                     
+                     # --- Peptide Uniqueness with Tooltip ---
+                     radioButtons("logic_uniqueness", 
+                                  label = tagList(
+                                    "Peptide Uniqueness",
+                                    tags$span(id = "tip_uniq", icon("info-circle"), class = "info-icon"),
+                                    bsTooltip("tip_uniq", "Unique: Peptide maps to exactly 1 antibody sequence. Common: Peptide maps to >1 antibody (conserved region).", placement = "right", trigger = "hover")
+                                  ), 
+                                  choices = c("All"="all","Unique"="unique","Common"="common"), selected = "all"),
+                     
+                     # --- Patient Frequency with Tooltip ---
+                     radioButtons("logic_patients", 
+                                  label = tagList(
+                                    "Patient Frequency",
+                                    tags$span(id = "tip_pat", icon("info-circle"), class = "info-icon"),
+                                    bsTooltip("tip_pat", "Singleton: Found in only 1 patient. Recurring: Found in 2+ patients (potential public clonotype).", placement = "right", trigger = "hover")
+                                  ), 
+                                  choices = c("All"="all","Singleton"="single","Recurring"="multi"), selected = "multi")
+                 )
     ),
     
-    mainPanel(
-      width = 9,
-      tabsetPanel(
-        tabPanel("Data Preview", 
-                 br(),
-                 div(class = "panel-container",
-                     div(class = "custom-header", "4. Live Summary"),
-                     uiOutput("summary_stats"),
-                     hr(),
-                     # CHANGED: Styled same as Live Summary
-                     div(class = "custom-header", "5. Download Results"),
-                     uiOutput("download_ui")
-                 ),
-                 div(class = "panel-container",
-                     DTOutput("preview_table")
-                 )
-        ),
-        tabPanel("About",
-                 br(),
-                 # --- NEW INTRODUCTION TEXT ---
-                 div(class = "panel-container",
-                     h4("Welcome to DAT-DB app!"),
-                     p("The identification of human antibodies using bottom-up proteomics relies on database searches that match experimental peptide fragments to theoretical values derived from protein sequences in databases. Standard protein databases, such as UniProt and NCBI-RefSeq, contain a limited number of antibody sequences compared to the human body’s capacity to generate billions and currently lack disease-specific antibody sequences. This limitation could lead to the misidentification of antibodies in samples. To overcome this challenge, DAT-DB, a database of disease-specific antibodies, provides researchers with antibody tryptic peptides derived from next-generation sequencing of antibody repertoires.")
-                 ),
-                 # -----------------------------
-                 div(class = "panel-container",
-                     h4("Database Status"),
-                     textOutput("debug_path"),
-                     hr(),
-                     h4("Filter Definitions"),
-                     tags$ul(
-                       tags$li(strong("CDR3 Spanning:"), " Length of peptide overlap with the hypervariable CDR3 region."),
-                       tags$li(strong("Disease-Specific:"), " Found ONLY in the selected disease."),
-                       tags$li(strong("Unique Clone:"), " Found in exactly one antibody sequence."),
-                       tags$li(strong("Recurring:"), " Found in at least 2 different patients.")
-                     )
-                 )
-        )
-      )
+    # --- Main Panel (Outputs) ---
+    mainPanel(width = 9,
+              tabsetPanel(
+                # Tab 1: Live Data Preview
+                tabPanel("Data Preview", br(),
+                         div(class = "panel-container",
+                             div(class = "custom-header", "4. Live Summary"),
+                             uiOutput("summary_stats"), # Statistics block
+                             
+                             # Download buttons (Hidden until a disease is selected)
+                             hidden(div(id = "download_section", hr(),
+                                        div(class = "custom-header", "5. Download Results"),
+                                        actionButton("btn_save_csv", "Save CSV", icon = icon("file-csv"), class="btn-download"),
+                                        actionButton("btn_save_fasta", "Save FASTA", icon = icon("file-code"), class="btn-download"),
+                                        actionButton("btn_save_summary", "Save Summary", icon = icon("file-text"), class="btn-download")
+                             ))
+                         ),
+                         div(class = "panel-container", DTOutput("preview_table"))
+                ),
+                
+                # Tab 2: About/Documentation
+                tabPanel("About", br(),
+                         div(class = "panel-container", h4("Welcome to DAT-DB app!"), 
+                             p("The identification of human antibodies using bottom-up proteomics relies on database searches that match experimental peptide fragments to theoretical values derived from protein sequences in databases. Standard protein databases, such as UniProt and NCBI-RefSeq, contain a limited number of antibody sequences compared to the human body’s capacity to generate billions and currently lack disease-exclusive antibody sequences. This limitation could lead to the misidentification of antibodies in samples. To overcome this challenge, DAT-DB, a database of disease-exclusive antibodies, provides researchers with antibody tryptic peptides derived from next-generation sequencing of antibody repertoires.")),
+                         div(class = "panel-container", h4("Database Status"), textOutput("debug_path"))
+                )
+              )
     )
   )
 )
 
-# -------------------------
-# Server
-# -------------------------
+# ==============================================================================
+# 3. SERVER LOGIC
+# ==============================================================================
 server <- function(input, output, session) {
   
-  output$debug_path <- renderText({
-    paste("Current Working Directory:", getwd())
-  })
+  # Display current working directory for debugging path issues
+  output$debug_path <- renderText({ paste("Current Working Directory:", getwd()) })
   
+  # --- Database Initialization ---
+  # Create an in-memory DuckDB connection
   con <- dbConnect(duckdb())
-  dbExecute(con, "PRAGMA memory_limit='4GB'")
-  dbExecute(con, "PRAGMA threads=4")
   
-  session$onSessionEnded(function() {
-    dbDisconnect(con, shutdown = TRUE)
+  # Configure DuckDB for performance
+  dbExecute(con, "PRAGMA memory_limit='4GB'; PRAGMA threads=4")
+  
+  # Ensure cleanup when the user closes the app
+  session$onSessionEnded(function() { dbDisconnect(con, shutdown = TRUE) })
+  
+  # Reactive values to track database state
+  vals <- reactiveValues(db_loaded = FALSE, db_path = NULL)
+  
+  # Show/Hide download section based on if a disease is selected
+  observe({
+    if (vals$db_loaded && length(input$filter_disease) > 0 && input$filter_disease[1] != "None") {
+      shinyjs::show("download_section")
+    } else {
+      shinyjs::hide("download_section")
+    }
   })
   
-  vals <- reactiveValues(
-    db_loaded = FALSE,
-    db_path = NULL
-  )
-  
-  # --- Core Loader Function ---
+  # --- Function: Load Database ---
+  # Scans folder for .parquet files and registers them as a DuckDB View
   load_database <- function(path) {
-    withProgress(message = 'Connecting to Database...', value = 0.1, {
+    withProgress(message = 'Initializing Database', value = 0, {
       tryCatch({
+        incProgress(0.1, detail = "Resetting views...")
         dbExecute(con, "DROP VIEW IF EXISTS data")
         
-        incProgress(0.2, detail = "Scanning parquet files...")
-        clean_path <- gsub("\\\\", "/", path)
-        glob <- file.path(clean_path, "**", "*.parquet")
+        incProgress(0.2, detail = "Scanning file system...")
+        clean_path <- gsub("\\\\", "/", path) # Fix Windows slashes
+        glob <- file.path(clean_path, "**", "*.parquet") # Recursive glob pattern
         
-        incProgress(0.3, detail = "Creating virtual views...")
+        # Create a View directly on the files (Zero-copy load)
+        incProgress(0.2, detail = "Indexing Parquet files...")
         dbExecute(con, sprintf("CREATE VIEW data AS SELECT * FROM read_parquet('%s')", glob))
         
-        incProgress(0.5, detail = "Reading Disease list...")
+        # --- Populate Metadata Dropdowns ---
+        # Fetch distinct values for dropdowns to ensure valid selections
+        incProgress(0.2, detail = "Extracting Disease metadata...")
         dis <- dbGetQuery(con, "SELECT DISTINCT Disease FROM data WHERE Disease IS NOT NULL ORDER BY Disease")
-        
-        if (nrow(dis) == 0) {
-          showNotification("Database connected but contains no data/diseases.", type="error")
-          return()
-        }
-        
-        incProgress(0.8, detail = "Reading Metadata...")
+        if (nrow(dis) == 0) stop("No data found.")
         updateSelectInput(session, "filter_disease", choices = c("None", dis$Disease), selected = "None")
         
+        incProgress(0.2, detail = "Extracting Isotype/Source metadata...")
         iso <- dbGetQuery(con, "SELECT DISTINCT Isotype FROM data WHERE Isotype IS NOT NULL ORDER BY Isotype")
         updateSelectInput(session, "filter_isotype", choices = c("All", iso$Isotype), selected = "All")
         
@@ -258,278 +335,248 @@ server <- function(input, output, session) {
         bt <- dbGetQuery(con, "SELECT DISTINCT BType FROM data WHERE BType IS NOT NULL ORDER BY BType")
         updateSelectInput(session, "filter_btype", choices = c("All", bt$BType), selected = "All")
         
+        incProgress(0.1, detail = "Finalizing...")
         vals$db_loaded <- TRUE
-        vals$db_path <- path
-        shinyjs::hide("db_folder_btn") 
-        showNotification("Database Loaded Successfully!", type="message")
+        vals$db_path <- norm_path(path)
+        shinyjs::hide("db_folder_btn") # Hide manual browse button on success
+        sendSweetAlert(session, "Success", paste0("Loaded:\n", vals$db_path), "success")
         
       }, error = function(e) {
-        showNotification(paste("Error loading DB:", e$message), type = "error")
-        vals$db_loaded <- FALSE
-        shinyjs::show("db_folder_btn")
+        sendSweetAlert(session, "Error", e$message, "error")
+        vals$db_loaded <- FALSE; shinyjs::show("db_folder_btn")
       })
     })
   }
   
+  # --- Auto-Detection Logic ---
+  # Checks common folder names at startup to see if DB exists locally
   observe({
-    cat("Checking for DB in:", getwd(), "\n")
     candidates <- c("db_stage3", "OASpepDB", "OASpeptideDB")
-    found_path <- NULL
-    for (p in candidates) {
-      if (dir.exists(p)) {
-        files <- list.files(p, pattern = "\\.parquet$", recursive = TRUE)
-        if (length(files) > 0) {
-          found_path <- p
-          break
-        }
-      }
-    }
-    if (!is.null(found_path)) {
-      cat("Auto-loading found DB:", found_path, "\n")
-      load_database(found_path)
-    } else {
-      cat("No DB found. Waiting for manual selection.\n")
-      shinyjs::show("db_folder_btn")
-    }
+    found <- NULL
+    for (p in candidates) if (dir.exists(p) && length(list.files(p, "\\.parquet$", recursive=T)) > 0) { found <- p; break }
+    if (!is.null(found)) load_database(found) else shinyjs::show("db_folder_btn")
   })
   
-  roots <- c(Computer = "/")
-  if (.Platform$OS.type == "windows") roots <- shinyFiles::getVolumes()()
-  shinyDirChoose(input, "db_folder_btn", roots = roots)
-  
+  # Manual Browse Button Handler
   observeEvent(input$db_folder_btn, {
-    req(input$db_folder_btn)
-    selected <- shinyFiles::parseDirPath(roots, input$db_folder_btn)
-    if (length(selected) > 0) {
-      load_database(norm_path(selected))
-    }
+    res <- dlg_dir(default = getwd(), title = "Select DB Folder")$res
+    if (length(res) == 1 && nzchar(res)) load_database(norm_path(res))
   })
   
+  # Render Database Status Indicator
   output$db_status_ui <- renderUI({
-    if (vals$db_loaded) {
-      tagList(
-        div(class="status-ok", icon("check-circle"), " Database Loaded"),
-        div(style="font-size:11px; color:#666; word-break:break-all;", vals$db_path)
-      )
-    } else {
-      div(class="status-err", icon("exclamation-circle"), " No Database Found (Select Folder)")
-    }
+    if (vals$db_loaded) tagList(div(class="status-ok", icon("check"), " Database Loaded"), div(style="font-size:11px; color:#666;", vals$db_path))
+    else div(class="status-err", icon("exclamation"), " No Database Found")
   })
   
-  # --- Query Builder ---
-  get_sql_query <- function(count_only = FALSE, limit = NULL) {
-    req(vals$db_loaded)
-    req(input$filter_disease != "None")
+  # --- Query Builder Function ---
+  # Dynamically constructs the SQL string based on all UI inputs.
+  # args:
+  #   count_only: If TRUE, returns aggregate stats instead of rows.
+  #   limit: Limits number of rows (for preview).
+  #   custom_select: Overrides the columns selected (used for specific exports).
+  get_sql_query <- function(count_only = FALSE, limit = NULL, custom_select = NULL) {
+    req(vals$db_loaded, length(input$filter_disease) > 0, input$filter_disease[1] != "None")
     
-    if (count_only) {
-      sel <- "COUNT(*) as n, COUNT(DISTINCT Peptide) as n_pep"
-    } else {
-      sel <- "Peptide, Disease, Patient, Isotype, 
-              CDR3_spanning_count, N_Patients, N_Diseases, N_Antibodies,
-              cdr3_aa, Antibody, filename"
-    }
+    val <- function(x) if (length(x) > 0) x[1] else "All"
+    
+    # Determine columns to select
+    sel <- if (!is.null(custom_select)) custom_select 
+    else if (count_only) "COUNT(*) as n, COUNT(DISTINCT Peptide) as n_pep, COUNT(DISTINCT Patient) as n_pat, COUNT(DISTINCT Antibody) as n_ab, MIN(N_Patients) as min_p, MAX(N_Patients) as max_p" 
+    else "Peptide, Disease, Patient, Isotype, CDR3_spanning_count, N_Patients, N_Diseases, N_Antibodies, cdr3_aa, Antibody, filename"
     
     q <- sprintf("SELECT %s FROM data WHERE 1=1", sel)
     
-    if (input$filter_disease != "All") q <- paste0(q, sprintf(" AND Disease = '%s'", input$filter_disease))
-    if (input$filter_bsource != "All") q <- paste0(q, sprintf(" AND BSource = '%s'", input$filter_bsource))
-    if (input$filter_btype   != "All") q <- paste0(q, sprintf(" AND BType   = '%s'", input$filter_btype))
-    if (input$filter_isotype != "All") q <- paste0(q, sprintf(" AND Isotype = '%s'", input$filter_isotype))
+    # Apply Clinical Filters
+    f_dis <- val(input$filter_disease)
+    if (f_dis != "All") q <- paste0(q, sprintf(" AND Disease = '%s'", f_dis))
+    f_src <- val(input$filter_bsource)
+    if (f_src != "All") q <- paste0(q, sprintf(" AND BSource = '%s'", f_src))
+    f_typ <- val(input$filter_btype)
+    if (f_typ != "All") q <- paste0(q, sprintf(" AND BType = '%s'", f_typ))
+    f_iso <- val(input$filter_isotype)
+    if (f_iso != "All") q <- paste0(q, sprintf(" AND Isotype = '%s'", f_iso))
     
-    if (input$logic_cdr3 == "none") {
-      q <- paste0(q, " AND CDR3_spanning_count = 0")
-    } else if (input$logic_cdr3 == "low") {
-      q <- paste0(q, " AND CDR3_spanning_count BETWEEN 1 AND 3")
-    } else if (input$logic_cdr3 == "high") {
-      q <- paste0(q, " AND CDR3_spanning_count > 3")
-    }
+    # Apply Logic Filters
+    l_cdr3 <- val(input$logic_cdr3)
+    if (l_cdr3 == "none") q <- paste0(q, " AND CDR3_spanning_count = 0")
+    else if (l_cdr3 == "low") q <- paste0(q, " AND CDR3_spanning_count BETWEEN 1 AND 3")
+    else if (l_cdr3 == "high") q <- paste0(q, " AND CDR3_spanning_count > 3")
     
-    if (input$logic_specificity == "specific") q <- paste0(q, " AND N_Diseases = 1")
-    if (input$logic_specificity == "shared")   q <- paste0(q, " AND N_Diseases > 1")
+    if (val(input$logic_specificity) == "specific") q <- paste0(q, " AND N_Diseases = 1")
+    if (val(input$logic_specificity) == "shared")   q <- paste0(q, " AND N_Diseases > 1")
+    if (val(input$logic_uniqueness) == "unique")    q <- paste0(q, " AND N_Antibodies = 1")
+    if (val(input$logic_uniqueness) == "common")    q <- paste0(q, " AND N_Antibodies > 1")
+    if (val(input$logic_patients) == "single")      q <- paste0(q, " AND N_Patients = 1")
+    if (val(input$logic_patients) == "multi")       q <- paste0(q, " AND N_Patients > 1")
     
-    if (input$logic_uniqueness == "unique")    q <- paste0(q, " AND N_Antibodies = 1")
-    if (input$logic_uniqueness == "common")    q <- paste0(q, " AND N_Antibodies > 1")
-    
-    if (input$logic_patients == "single")      q <- paste0(q, " AND N_Patients = 1")
-    if (input$logic_patients == "multi")       q <- paste0(q, " AND N_Patients > 1")
-    
-    if (!is.null(limit) && !count_only) q <- paste0(q, " LIMIT ", limit)
-    
+    # Apply Limit (only if not counting or custom selecting)
+    if (!is.null(limit) && !count_only && is.null(custom_select)) q <- paste0(q, " LIMIT ", limit)
     return(q)
   }
   
-  # --- Outputs ---
+  # --- Summary Stats Output ---
   output$summary_stats <- renderUI({
     if (!vals$db_loaded) return(div("Please load a database."))
-    if (input$filter_disease == "None") return(div("Select a Disease to begin."))
+    if (length(input$filter_disease) == 0 || input$filter_disease[1] == "None") return(div("Select a Disease."))
     
-    withProgress(message = 'Filtering data...', value = 0.5, {
-      sql <- get_sql_query(count_only = TRUE)
-      res <- tryCatch(dbGetQuery(con, sql), error = function(e) data.frame(n=0, n_pep=0))
+    withProgress(message = 'Calculating Summary', value = 0, {
+      # Get Basic Counts
+      incProgress(0.2, detail = "Counting records...")
+      res <- tryCatch(dbGetQuery(con, get_sql_query(count_only = TRUE)), error = function(e) data.frame(n=0, n_pep=0))
+      
+      # Get Metadata Summaries (which sources exist in this filter slice?)
+      incProgress(0.5, detail = "Analyzing metadata categories...")
+      res_meta <- tryCatch(dbGetQuery(con, get_sql_query(custom_select = "DISTINCT BSource, BType, Isotype")), error = function(e) data.frame())
+      
+      uniq_s <- if(nrow(res_meta)>0) paste(unique(res_meta$BSource), collapse=", ") else "-"
+      uniq_t <- if(nrow(res_meta)>0) paste(unique(res_meta$BType), collapse=", ") else "-"
+      uniq_i <- if(nrow(res_meta)>0) paste(unique(res_meta$Isotype), collapse=", ") else "-"
+      incProgress(0.3, detail = "Rendering...")
     })
     
-    map_dict <- list(
-      "all" = "All", "none" = "None (0 AA)", "low" = "Low (1-3 AA)", "high" = "High (>3 AA)",
-      "specific" = "Disease-Specific", "shared" = "Shared",
-      "unique" = "Unique Clone", "common" = "Common",
-      "single" = "Singleton", "multi" = "Recurring"
-    )
+    # UI Label Map
+    map_dict <- list("all"="All", "none"="None (0 AA)", "low"="Low (1-3 AA)", "high"="High (>3 AA)", "specific"="Disease-Exclusive", "shared"="Shared", "unique"="Unique", "common"="Common", "single"="Singleton", "multi"="Recurring")
+    lab <- function(x) map_dict[[x[1]]] %||% x[1]
     
-    txt_cdr3 <- map_dict[[input$logic_cdr3]] %||% input$logic_cdr3
-    txt_spec <- map_dict[[input$logic_specificity]] %||% input$logic_specificity
-    txt_uniq <- map_dict[[input$logic_uniqueness]] %||% input$logic_uniqueness
-    txt_pat  <- map_dict[[input$logic_patients]] %||% input$logic_patients
-    full_disease <- get_full_disease_name(input$filter_disease)
-    
+    # Render HTML Block
     tagList(
-      h4(strong("Distinct Peptides: "), fmt_int(res$n_pep), style="color: #007bc2; margin-top:0;"),
-      div(style="font-size: 11px; color:#666; margin-bottom:8px;", paste("Total Rows Matched:", fmt_int(res$n))),
-      hr(style="margin: 8px 0;"),
-      div(class="summary-stat", span("Disease:"), strong(full_disease)),
-      div(class="summary-stat", span("B-Source:"), strong(input$filter_bsource)),
-      div(class="summary-stat", span("B-Type:"), strong(input$filter_btype)),
-      div(class="summary-stat", span("Isotype:"), strong(input$filter_isotype)),
-      hr(style="margin: 8px 0;"),
-      div(class="summary-stat", span("CDR3 Overlap:"), strong(txt_cdr3)),
-      div(class="summary-stat", span("Specificity:"), strong(txt_spec)),
-      div(class="summary-stat", span("Uniqueness:"), strong(txt_uniq)),
-      div(class="summary-stat", span("Patient Freq:"), strong(txt_pat))
+      h4(strong("Distinct Peptides: "), fmt_int(res$n_pep), style="color: #007bc2;"),
+      div(style="font-size:11px; margin-bottom:8px;", paste("Total Rows (Incidences):", fmt_int(res$n))),
+      hr(style="margin:5px 0;"),
+      div(class="summary-stat", span("Disease:"), strong(get_full_disease_name(input$filter_disease))),
+      div(class="summary-stat", span("Sources:"), strong(uniq_s)),
+      div(class="summary-stat", span("Types:"), strong(uniq_t)),
+      div(class="summary-stat", span("Isotypes:"), strong(uniq_i)),
+      div(class="summary-stat", span("CDR3 Spanning:"), strong(lab(input$logic_cdr3))),
+      div(class="summary-stat", span("Specificity:"), strong(lab(input$logic_specificity))),
+      div(class="summary-stat", span("Uniqueness:"), strong(lab(input$logic_uniqueness))),
+      div(class="summary-stat", span("Patient Freq:"), strong(lab(input$logic_patients)))
     )
   })
   
+  # --- Data Table Preview ---
   output$preview_table <- renderDT({
-    if (!vals$db_loaded || input$filter_disease == "None") return(NULL)
-    withProgress(message = 'Fetching preview...', value = 0.5, {
-      sql <- get_sql_query(limit = 100)
-      df <- dbGetQuery(con, sql)
-    })
-    datatable(df, options = list(scrollX = TRUE, pageLength = 10))
+    if (!vals$db_loaded || length(input$filter_disease)==0 || input$filter_disease[1] == "None") return(NULL)
+    withProgress(message='Previewing Table', value=0, { 
+      incProgress(0.5, detail = "Fetching top 100 rows...")
+      dbGetQuery(con, get_sql_query(limit=100)) 
+    }) %>% datatable(options=list(scrollX=T, pageLength=10))
   })
   
-  # --- Output: Download Buttons ---
-  output$download_ui <- renderUI({
-    if (!vals$db_loaded || input$filter_disease == "None") return(div("Select Disease to enable downloads."))
-    tagList(
-      downloadButton("dl_csv", "Download CSV", class="btn-download"),
-      downloadButton("dl_fasta", "Download FASTA", class="btn-download"),
-      downloadButton("dl_summary", "Download Summary", class="btn-download")
-    )
-  })
+  # ============================================================================
+  # 4. DOWNLOAD HANDLERS
+  # ============================================================================
   
-  # --- 1. CSV Download (Modified with Live Progress) ---
-  output$dl_csv <- downloadHandler(
-    filename = function() { paste0("OAS_Export_", Sys.Date(), ".csv") },
-    content = function(file) {
-      withProgress(message = "Preparing CSV...", value = 0, {
-        
-        # 1. Count Rows first
-        incProgress(0.1, detail = "Calculating total row count...")
-        count_sql <- get_sql_query(count_only = TRUE)
-        n_rows <- tryCatch(dbGetQuery(con, count_sql)$n, error = function(e) 0)
-        
-        # 2. Update Message
-        incProgress(0.3, detail = paste("Exporting", fmt_int(n_rows), "rows to CSV..."))
-        
-        # 3. Execute Copy (Native DuckDB is fast)
-        sql <- get_sql_query()
-        tmp_sql <- sprintf("COPY (%s) TO '%s' (FORMAT CSV, HEADER)", sql, norm_path(file))
-        dbExecute(con, tmp_sql)
-        
-        incProgress(0.9, detail = "Finalizing file...")
-      })
+  # --- CSV Export Handler ---
+  # Uses DuckDB's native COPY command for high-speed export
+  observeEvent(input$btn_save_csv, {
+    f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".csv"), title = "Save CSV")$res
+    if (length(f) == 1 && nzchar(f)) {
+      tryCatch({
+        withProgress(message="Exporting CSV", value=0, {
+          incProgress(0.2, detail = "Generating SQL...")
+          sql <- get_sql_query(); 
+          incProgress(0.4, detail = "Writing to disk (DuckDB COPY)...")
+          dbExecute(con, sprintf("COPY (%s) TO '%s' (FORMAT CSV, HEADER)", sql, norm_path(f)))
+          incProgress(0.4, detail = "Done.")
+        })
+        sendSweetAlert(session, "Export Complete!", paste("Saved:", f), "success")
+      }, error = function(e) sendSweetAlert(session, "Failed", e$message, "error"))
     }
-  )
+  })
   
-  # --- 2. FASTA Download (Modified with Live Progress) ---
-  output$dl_fasta <- downloadHandler(
-    filename = function() { paste0("OAS_Export_", Sys.Date(), ".fasta") },
-    content = function(file) {
-      withProgress(message = "Preparing FASTA...", value = 0, {
-        
-        # 1. Count First
-        incProgress(0.1, detail = "Calculating counts...")
-        count_sql <- get_sql_query(count_only = TRUE)
-        counts <- tryCatch(dbGetQuery(con, count_sql), error = function(e) list(n=0, n_pep=0))
-        
-        # 2. Fetch with count info
-        incProgress(0.2, detail = paste("Fetching", fmt_int(counts$n), "rows from DB..."))
-        sql <- get_sql_query()
-        df <- dbGetQuery(con, sql)
-        
-        if (nrow(df) == 0) {
-          writeLines("No data found.", file)
-          return()
-        }
-        
-        # 3. Aggregate with count info
-        incProgress(0.5, detail = paste("Aggregating", fmt_int(counts$n_pep), "unique sequences..."))
-        dt <- as.data.table(df)
-        dt_agg <- dt[, .(All_Filenames = paste(unique(filename), collapse = ";")), by = Peptide]
-        dt_agg[, N := .I]
-        dt_agg[, header := paste0("pep_", N, "|", All_Filenames, "|")]
-        
-        # 4. Write
-        incProgress(0.8, detail = "Writing FASTA to disk...")
-        if (nrow(dt_agg) > 0) {
+  # --- FASTA Export Handler ---
+  # Aggregates filenames for identical peptides to ensure unique headers
+  observeEvent(input$btn_save_fasta, {
+    f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".fasta"), title = "Save FASTA")$res
+    if (length(f) == 1 && nzchar(f)) {
+      tryCatch({
+        withProgress(message="Exporting Unique FASTA", value=0, {
+          # Fetch only Peptide sequence and Source Filename
+          incProgress(0.2, detail = "Querying peptide data...")
+          df <- dbGetQuery(con, get_sql_query(custom_select = "Peptide, filename"))
+          if(nrow(df)==0) stop("No data matches current filters.")
+          
+          incProgress(0.3, detail = "Converting to Table & Grouping...")
+          dt <- as.data.table(df)
+          
+          # Aggregate duplicates: Combine filenames into one FASTA header per unique peptide
+          incProgress(0.3, detail = "Aggregating duplicates...")
+          dt_agg <- dt[, .(Header = paste0("pep_", .I[1], "|", paste(unique(filename), collapse=";"))), by = Peptide]
+          
+          # Write using Biostrings
+          incProgress(0.1, detail = "Writing FASTA file...")
           seqs <- AAStringSet(dt_agg$Peptide)
-          names(seqs) <- dt_agg$header
-          writeXStringSet(seqs, file)
-        } else {
-          writeLines("No sequences to export.", file)
-        }
-        incProgress(1, detail = "Done.")
-      })
+          names(seqs) <- dt_agg$Header
+          writeXStringSet(seqs, f)
+        })
+        sendSweetAlert(session, "Export Complete!", paste("Unique sequences saved to:", f), "success")
+      }, error = function(e) sendSweetAlert(session, "Failed", e$message, "error"))
     }
-  )
+  })
   
-  # --- 3. Summary Text Download ---
-  output$dl_summary <- downloadHandler(
-    filename = function() { paste0("OAS_Summary_", Sys.Date(), ".txt") },
-    content = function(file) {
-      sql <- get_sql_query(count_only = TRUE)
-      counts <- dbGetQuery(con, sql)
-      
-      map_dict <- list(
-        "all" = "All", "none" = "None (0 AA)", "low" = "Low (1-3 AA)", "high" = "High (>3 AA)",
-        "specific" = "Disease-Specific", "shared" = "Shared",
-        "unique" = "Unique Clone", "common" = "Common",
-        "single" = "Singleton", "multi" = "Recurring"
-      )
-      get_lab <- function(x) map_dict[[x]] %||% x
-      
-      lines <- c(
-        "================================================================",
-        " DAT-DB EXPORT SUMMARY",
-        "================================================================",
-        paste("Date:              ", Sys.time()),
-        paste("Database Path:     ", vals$db_path),
-        "",
-        "----------------------------------------------------------------",
-        " STATISTICS",
-        "----------------------------------------------------------------",
-        paste("Distinct Peptides: ", fmt_int(counts$n_pep)),
-        paste("Total Rows Matched:", fmt_int(counts$n)),
-        "",
-        "----------------------------------------------------------------",
-        " FILTERS APPLIED",
-        "----------------------------------------------------------------",
-        paste("Disease:           ", get_full_disease_name(input$filter_disease)),
-        paste("B-Cell Source:     ", input$filter_bsource),
-        paste("B-Cell Type:       ", input$filter_btype),
-        paste("Isotype:           ", input$filter_isotype),
-        "",
-        paste("CDR3 Spanning:     ", get_lab(input$logic_cdr3)),
-        paste("Disease Specificity:", get_lab(input$logic_specificity)),
-        paste("Peptide Uniqueness:", get_lab(input$logic_uniqueness)),
-        paste("Patient Frequency: ", get_lab(input$logic_patients)),
-        "================================================================"
-      )
-      
-      writeLines(lines, file)
+  # --- Summary Report Export Handler ---
+  # Generates a text file with filter settings and data distribution stats
+  observeEvent(input$btn_save_summary, {
+    f <- dlg_save(default = paste0("OAS_Summary_", Sys.Date(), ".txt"), title = "Save Summary")$res
+    if (length(f) == 1 && nzchar(f)) {
+      tryCatch({
+        withProgress(message="Generating Summary Report", value=0, {
+          incProgress(0.1, detail = "Counting totals...")
+          cnt <- dbGetQuery(con, get_sql_query(count_only = T))
+          tot <- cnt$n_pep
+          
+          # Helper to calculate percentages for categories (BSource, Isotype, etc.)
+          stat <- function(col) {
+            incProgress(0.1, detail = paste("Aggregating", col, "..."))
+            df <- dbGetQuery(con, paste0(get_sql_query(custom_select=sprintf("%s, COUNT(DISTINCT Peptide) c", col)), sprintf(" GROUP BY %s ORDER BY c DESC", col)))
+            if(nrow(df)==0) return("-")
+            paste(sprintf("%s: %s (%.1f%%)", df[[col]], fmt_int(df$c), (df$c/tot)*100), collapse=", ")
+          }
+          
+          map_dict <- list("all"="All", "none"="None (0 AA)", "low"="Low (1-3 AA)", "high"="High (>3 AA)", "specific"="Disease-Exclusive", "shared"="Shared", "unique"="Unique", "common"="Common", "single"="Singleton", "multi"="Recurring")
+          
+          incProgress(0.2, detail = "Formatting report...")
+          lines <- c(
+            "==================================================",
+            "DAT-DB EXPORT SUMMARY",
+            "==================================================",
+            paste("Export Date:   ", Sys.time()),
+            paste("Database Path: ", vals$db_path),
+            "",
+            "CORE METRICS:",
+            paste("Distinct Peptides: ", fmt_int(cnt$n_pep)),
+            paste("Unique Patients:   ", fmt_int(cnt$n_pat)),
+            paste("Unique Antibodies: ", fmt_int(cnt$n_ab)),
+            paste("Total Rows/Hits:   ", fmt_int(cnt$n)),
+            "",
+            "ACTIVE FILTERS:",
+            paste("Disease:             ", get_full_disease_name(input$filter_disease)),
+            paste("B-Cell Source:       ", input$filter_bsource[1]),
+            paste("B-Cell Type:         ", input$filter_btype[1]),
+            paste("Isotype:             ", input$filter_isotype[1]),
+            paste("CDR3 Spanning:       ", map_dict[[input$logic_cdr3[1]]] %||% input$logic_cdr3[1]),
+            paste("Specificity:         ", map_dict[[input$logic_specificity[1]]] %||% input$logic_specificity[1]),
+            paste("Peptide Uniqueness:", map_dict[[input$logic_uniqueness[1]]] %||% input$logic_uniqueness[1]),
+            paste("Patient Frequency: ", map_dict[[input$logic_patients[1]]] %||% input$logic_patients[1]),
+            "",
+            "DATA BREAKDOWN (by Peptide count):",
+            paste("Sources:            ", stat("BSource")),
+            paste("Types:              ", stat("BType")),
+            paste("Isotypes:           ", stat("Isotype")),
+            paste("Patient Freq Range:", sprintf("Min: %s, Max: %s patients per peptide", cnt$min_p, cnt$max_p)),
+            "=================================================="
+          )
+          
+          incProgress(0.1, detail = "Writing to disk...")
+          writeLines(lines, f)
+        })
+        sendSweetAlert(session, "Export Complete!", paste("Saved:", f), "success")
+      }, error = function(e) sendSweetAlert(session, "Failed", e$message, "error"))
     }
-  )
+  })
 }
 
-`%||%` <- function(a, b) if (!is.null(a)) a else b
-
+# Run the Application
 shinyApp(ui, server)
