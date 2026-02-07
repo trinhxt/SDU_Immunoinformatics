@@ -6,7 +6,7 @@
 # 1. Connects to a local DuckDB instance to query Parquet files efficiently.
 # 2. Provides dynamic filtering for Diseases, B-Cell types, and Specificity logic.
 # 3. Generates live summary statistics and data previews.
-# 4. Exports filtered data to CSV, FASTA, and Summary Text reports.
+# 4. Exports filtered data to Parquet, FASTA, and Summary Text reports.
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -27,6 +27,7 @@ suppressPackageStartupMessages({
   library(shinyFiles)    # For OS-native file/folder selection dialogs
   library(Biostrings)    # For handling biological sequences (writing FASTA)
   library(svDialogs)     # For system save dialogs
+  library(tools)         # For file path manipulation (file_path_sans_ext)
 })
 
 # --- Helper Functions ---
@@ -46,32 +47,32 @@ fmt_int <- function(x) format(as.numeric(x), big.mark = ",", scientific = FALSE)
 # Maps short internal disease codes (keys) to readable full names (values).
 disease_code_to_full <- c(
   "AChR-MG"                         = "Acetylcholine receptor-positive myasthenia gravis",
-  "Allergic-Rhinitis-In-Season"     = "Allergic rhinitis in season",
+  "Allergic-Rhinitis-In-Season"       = "Allergic rhinitis in season",
   "Allergic-Rhinitis-Out-Of-Season" = "Allergic rhinitis out of season",
-  "Allergy%2FNoSIT"                 = "Allergy NoSIT",
-  "Allergy/NoSIT"                   = "Allergy NoSIT",
-  "Allergy%2FSIT"                   = "Allergy SIT",
-  "Allergy/SIT"                     = "Allergy SIT",
-  "Asthma"                          = "Asthma",
-  "CLL"                             = "Chronic lymphocytic leukemia",
-  "CMV"                             = "Cytomegalovirus",
-  "CMV%2FEBV"                       = "Cytomegalovirus/Epstein–Barr virus",
-  "CMV/EBV"                         = "Cytomegalovirus/Epstein–Barr virus",
-  "Dengue"                          = "Dengue",
-  "Ebola"                           = "Ebola",
-  "EBV"                             = "Epstein–Barr virus",
-  "HCV"                             = "Hepatitis C virus",
-  "Healthy%2Fceliac-disease"        = "Celiac",
-  "Healthy/celiac-disease"          = "Celiac",
-  "HIV"                             = "HIV",
-  "Light-Chain-Amyloidosis"         = "Light chain amyloidosis",
-  "MS"                              = "Multiple sclerosis",
-  "MuSK-MG"                         = "Muscle-specific kinase myasthenia gravis",
-  "Non-Dengue-Febrile-Illness"      = "Non-dengue febrile illness",
-  "Obstructive-Sleep-Apnea"         = "Obstructive sleep apnea",
-  "SARS-COV-2"                      = "SARS-COV-2",
-  "SLE"                             = "Systemic lupus erythematosus",
-  "Tonsillitis"                     = "Tonsillitis",
+  "Allergy%2FNoSIT"                    = "Allergy NoSIT",
+  "Allergy/NoSIT"                      = "Allergy NoSIT",
+  "Allergy%2FSIT"                      = "Allergy SIT",
+  "Allergy/SIT"                        = "Allergy SIT",
+  "Asthma"                             = "Asthma",
+  "CLL"                                = "Chronic lymphocytic leukemia",
+  "CMV"                                = "Cytomegalovirus",
+  "CMV%2FEBV"                         = "Cytomegalovirus/Epstein–Barr virus",
+  "CMV/EBV"                            = "Cytomegalovirus/Epstein–Barr virus",
+  "Dengue"                             = "Dengue",
+  "Ebola"                              = "Ebola",
+  "EBV"                                = "Epstein–Barr virus",
+  "HCV"                                = "Hepatitis C virus",
+  "Healthy%2Fceliac-disease"           = "Celiac",
+  "Healthy/celiac-disease"            = "Celiac",
+  "HIV"                                = "HIV",
+  "Light-Chain-Amyloidosis"            = "Light chain amyloidosis",
+  "MS"                                 = "Multiple sclerosis",
+  "MuSK-MG"                            = "Muscle-specific kinase myasthenia gravis",
+  "Non-Dengue-Febrile-Illness"        = "Non-dengue febrile illness",
+  "Obstructive-Sleep-Apnea"            = "Obstructive sleep apnea",
+  "SARS-COV-2"                         = "SARS-COV-2",
+  "SLE"                                = "Systemic lupus erythematosus",
+  "Tonsillitis"                       = "Tonsillitis",
   "Tonsillitis%2FObstructive-Sleep-Apnea" = "Tonsillitis/Obstructive sleep apnea",
   "Tonsillitis/Obstructive-Sleep-Apnea"   = "Tonsillitis/Obstructive sleep apnea"
 )
@@ -253,7 +254,7 @@ ui <- fluidPage(
                              # Download buttons (Hidden until a disease is selected)
                              hidden(div(id = "download_section", hr(),
                                         div(class = "custom-header", "5. Download Results"),
-                                        actionButton("btn_save_csv", "Save CSV", icon = icon("file-csv"), class="btn-download"),
+                                        actionButton("btn_save_parquet", "Save Parquet", icon = icon("file-archive"), class="btn-download"),
                                         actionButton("btn_save_fasta", "Save FASTA", icon = icon("file-code"), class="btn-download"),
                                         actionButton("btn_save_summary", "Save Summary", icon = icon("file-text"), class="btn-download")
                              ))
@@ -372,9 +373,9 @@ server <- function(input, output, session) {
   # --- Query Builder Function ---
   # Dynamically constructs the SQL string based on all UI inputs.
   # args:
-  #   count_only: If TRUE, returns aggregate stats instead of rows.
-  #   limit: Limits number of rows (for preview).
-  #   custom_select: Overrides the columns selected (used for specific exports).
+  #    count_only: If TRUE, returns aggregate stats instead of rows.
+  #    limit: Limits number of rows (for preview).
+  #    custom_select: Overrides the columns selected (used for specific exports).
   get_sql_query <- function(count_only = FALSE, limit = NULL, custom_select = NULL) {
     req(vals$db_loaded, length(input$filter_disease) > 0, input$filter_disease[1] != "None")
     
@@ -468,17 +469,18 @@ server <- function(input, output, session) {
   # 4. DOWNLOAD HANDLERS
   # ============================================================================
   
-  # --- CSV Export Handler ---
-  # Uses DuckDB's native COPY command for high-speed export
-  observeEvent(input$btn_save_csv, {
-    f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".csv"), title = "Save CSV")$res
+  # --- Parquet Export Handler ---
+  # Uses DuckDB's native COPY command for high-speed export to Parquet format
+  observeEvent(input$btn_save_parquet, {
+    f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".parquet"), title = "Save Parquet")$res
     if (length(f) == 1 && nzchar(f)) {
       tryCatch({
-        withProgress(message="Exporting CSV", value=0, {
+        withProgress(message="Exporting Parquet", value=0, {
           incProgress(0.2, detail = "Generating SQL...")
           sql <- get_sql_query(); 
           incProgress(0.4, detail = "Writing to disk (DuckDB COPY)...")
-          dbExecute(con, sprintf("COPY (%s) TO '%s' (FORMAT CSV, HEADER)", sql, norm_path(f)))
+          # Use FORMAT PARQUET for compressed, column-oriented storage
+          dbExecute(con, sprintf("COPY (%s) TO '%s' (FORMAT PARQUET)", sql, norm_path(f)))
           incProgress(0.4, detail = "Done.")
         })
         sendSweetAlert(session, "Export Complete!", paste("Saved:", f), "success")
@@ -487,31 +489,35 @@ server <- function(input, output, session) {
   })
   
   # --- FASTA Export Handler ---
-  # Aggregates filenames for identical peptides to ensure unique headers
+  # Saves a single FASTA file with headers formatted as OAS|pep_N
   observeEvent(input$btn_save_fasta, {
     f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".fasta"), title = "Save FASTA")$res
+    
     if (length(f) == 1 && nzchar(f)) {
       tryCatch({
-        withProgress(message="Exporting Unique FASTA", value=0, {
-          # Fetch only Peptide sequence and Source Filename
+        withProgress(message="Exporting FASTA", value=0, {
+          
           incProgress(0.2, detail = "Querying peptide data...")
-          df <- dbGetQuery(con, get_sql_query(custom_select = "Peptide, filename"))
-          if(nrow(df)==0) stop("No data matches current filters.")
+          # Only need unique Peptides for the FASTA file
+          df <- dbGetQuery(con, get_sql_query(custom_select = "DISTINCT Peptide"))
           
-          incProgress(0.3, detail = "Converting to Table & Grouping...")
-          dt <- as.data.table(df)
+          if(nrow(df) == 0) stop("No data matches current filters.")
           
-          # Aggregate duplicates: Combine filenames into one FASTA header per unique peptide
-          incProgress(0.3, detail = "Aggregating duplicates...")
-          dt_agg <- dt[, .(Header = paste0("pep_", .I[1], "|", paste(unique(filename), collapse=";"))), by = Peptide]
+          incProgress(0.4, detail = "Formatting sequences...")
+          # Convert to AAStringSet
+          seqs <- AAStringSet(df$Peptide)
           
-          # Write using Biostrings
-          incProgress(0.1, detail = "Writing FASTA file...")
-          seqs <- AAStringSet(dt_agg$Peptide)
-          names(seqs) <- dt_agg$Header
+          # Assign names in format: OAS|pep_N
+          names(seqs) <- paste0("OAS|pep_", seq_along(df$Peptide))
+          
+          incProgress(0.3, detail = "Writing file...")
           writeXStringSet(seqs, f)
+          
+          incProgress(0.1, detail = "Done.")
         })
-        sendSweetAlert(session, "Export Complete!", paste("Unique sequences saved to:", f), "success")
+        
+        sendSweetAlert(session, "Export Complete!", paste("FASTA saved to:", f), "success")
+        
       }, error = function(e) sendSweetAlert(session, "Failed", e$message, "error"))
     }
   })
@@ -546,26 +552,29 @@ server <- function(input, output, session) {
             paste("Database Path: ", vals$db_path),
             "",
             "CORE METRICS:",
+            "--------------------------------------------------",
             paste("Distinct Peptides: ", fmt_int(cnt$n_pep)),
             paste("Unique Patients:   ", fmt_int(cnt$n_pat)),
             paste("Unique Antibodies: ", fmt_int(cnt$n_ab)),
             paste("Total Rows/Hits:   ", fmt_int(cnt$n)),
             "",
             "ACTIVE FILTERS:",
+            "--------------------------------------------------",
             paste("Disease:             ", get_full_disease_name(input$filter_disease)),
             paste("B-Cell Source:       ", input$filter_bsource[1]),
             paste("B-Cell Type:         ", input$filter_btype[1]),
             paste("Isotype:             ", input$filter_isotype[1]),
             paste("CDR3 Spanning:       ", map_dict[[input$logic_cdr3[1]]] %||% input$logic_cdr3[1]),
             paste("Specificity:         ", map_dict[[input$logic_specificity[1]]] %||% input$logic_specificity[1]),
-            paste("Peptide Uniqueness:", map_dict[[input$logic_uniqueness[1]]] %||% input$logic_uniqueness[1]),
-            paste("Patient Frequency: ", map_dict[[input$logic_patients[1]]] %||% input$logic_patients[1]),
+            paste("Peptide Uniqueness:  ", map_dict[[input$logic_uniqueness[1]]] %||% input$logic_uniqueness[1]),
+            paste("Patient Frequency:   ", map_dict[[input$logic_patients[1]]] %||% input$logic_patients[1]),
             "",
             "DATA BREAKDOWN (by Peptide count):",
-            paste("Sources:            ", stat("BSource")),
-            paste("Types:              ", stat("BType")),
-            paste("Isotypes:           ", stat("Isotype")),
-            paste("Patient Freq Range:", sprintf("Min: %s, Max: %s patients per peptide", cnt$min_p, cnt$max_p)),
+            "--------------------------------------------------",
+            paste("Sources:             ", stat("BSource")),
+            paste("Types:               ", stat("BType")),
+            paste("Isotypes:            ", stat("Isotype")),
+            paste("Patient Freq Range:  ", sprintf("Min: %s, Max: %s patients per peptide", cnt$min_p, cnt$max_p)),
             "=================================================="
           )
           
