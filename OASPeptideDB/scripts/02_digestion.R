@@ -34,7 +34,7 @@ suppressPackageStartupMessages({
 main <- function() {
   
   cat("================================================================\n")
-  cat(" PART 2: DIGESTION (Simplified + Disease Filter)\n")
+  cat(" PART 2: DIGESTION \n")
   cat("================================================================\n")
   cat("Input Dir:     ", P$processed_dir, "\n")
   cat("Output Dir:    ", P$digest_csv_dir, "\n")
@@ -65,18 +65,6 @@ main <- function() {
   cat("Loading Metadata...\n")
   meta_cols <- c("Filename", "Disease", "BSource", "BType", "Isotype")
   metadata  <- fread(P$metadata_csv, select = meta_cols)
-  
-  # ---------------------------------------------------------------------------
-  # CRITICAL UPDATE: Filter for Disease != "None"
-  # ---------------------------------------------------------------------------
-  initial_count <- nrow(metadata)
-  metadata <- metadata[Disease != "None"]
-  filtered_count <- nrow(metadata)
-  
-  cat(sprintf("Metadata Filtering:\n - Total entries: %d\n - Disease != 'None': %d\n - Removed: %d\n\n", 
-              initial_count, filtered_count, initial_count - filtered_count))
-  
-  if (filtered_count == 0) stop("No files found with Disease != 'None'. Check metadata.")
   
   setkey(metadata, Filename)
   
