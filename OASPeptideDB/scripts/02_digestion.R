@@ -127,7 +127,7 @@ main <- function() {
     #    Digest unique sequences only
     seq_vec <- unique(dt$sequence_alignment_aa)
     aa      <- Biostrings::AAStringSet(stats::setNames(seq_vec, seq_vec))
-    dig     <- cleaver::cleave(aa, enzym = "trypsin", missedCleavages = 0:1, unique = TRUE)
+    dig     <- cleaver::cleave(aa, enzym = "trypsin", missedCleavages = 0:2, unique = TRUE)
     
     # Expand results
     lens    <- lengths(dig)
