@@ -9,7 +9,7 @@
 # 1. Project Directories (Customize these)
 # ==============================================================================
 # Where the raw OAS shell script is located (Download this from OAS website)
-DOWNLOAD_SHELL_SCRIPT <- "data/bulk_download_human_unpaired_heavychain_disease.sh"
+DOWNLOAD_SHELL_SCRIPT <- "data/bulk_download_human_unpaired_heavychain.sh"
 
 # Where to store the raw downloaded files (can be deleted after processing)
 RAW_DATA_DIR <- "D:/OAS/unpaired/raw"
