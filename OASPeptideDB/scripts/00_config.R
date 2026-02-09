@@ -37,7 +37,7 @@ REF_PEPTIDE_RDATA <- "data/UniProtNCBI_Tryptic.RData"
 # 2. Computational Settings
 # ==============================================================================
 # Number of cores for parallel processing (downloading/digesting)
-N_CORES <- 6L
+N_CORES <- 8L
 
 # DuckDB settings for database compaction
 DUCKDB_MEMORY_LIMIT <- "48GB"
