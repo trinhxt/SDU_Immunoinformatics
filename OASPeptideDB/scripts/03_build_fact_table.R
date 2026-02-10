@@ -2,14 +2,13 @@
 ## scripts/03_build_fact_table.R
 ##
 ## Goal: Build the Fact Table (db_stage1)
-##       - Joins Digest Data with Metadata
-##       - Partitions by Clinical Variables
-##       - Calculates CDR3 Overlap (Amino Acid Count) per row
+##       - Aggregates "Disease" Parquet files from Stage 2.
+##       - Partitions data by Clinical Variables for fast querying.
+##       - EXCLUDES Healthy (Background) data to maintain schema consistency.
 ##
-## Optimizations:
-##   - Vectorized Overlap Calc (stringi)
-##   - Flat Staging (Reduced I/O overhead)
-##   - Defensive Metadata Joins
+## Optimization:
+##   - Direct Parquet->DuckDB->Parquet pipeline (Zero R memory overhead).
+##   - Bulk loading of file lists.
 ################################################################################
 
 source("scripts/00_config.R")
@@ -19,179 +18,129 @@ suppressPackageStartupMessages({
   library(arrow)
   library(dplyr)
   library(duckdb)
-  library(future)
-  library(future.apply)
-  library(stringi) # C-optimized string operations
 })
-
-# Increase future globals limit for large objects (just in case)
-options(future.globals.maxSize = 2000 * 1024^2) # 2GB
 
 main <- function() {
   
-  # Paths
-  STAGING_DIR <- file.path(P$parquet_dir, "_staging")
+  # ---------------------------------------------------------------------------
+  # 1. Configuration & Paths
+  # ---------------------------------------------------------------------------
+  INPUT_DIR   <- P$digest_csv_dir      # Now contains .parquet files from step 02
   DB_STAGE1   <- file.path(P$parquet_dir, "db_stage1")
   
-  # Partition Keys (Applied by DuckDB at the end)
+  # Partition Keys (How the data will be organized on disk)
+  # partitioning by Disease/BSource makes querying specific cohorts instant.
   PARTITION_COLS <- c("Disease", "BSource", "BType", "Isotype")
   
-  # Expected Columns
-  EXPECTED_COLS <- c(
-    "Peptide", "Antibody", "v_call", "d_call", "j_call", "cdr3_aa", 
-    "filename", "Patient", "Disease", "BSource", "BType", "Isotype",
-    "CDR3_spanning_count"
-  )
-  
-  cat("=== STEP 1: Building Fact Table (db_stage1) ===\n")
-  cat("Target DB:", DB_STAGE1, "\n\n")
+  cat("=== STEP 3: Building Fact Table (db_stage1) ===\n")
+  cat("Input Dir: ", INPUT_DIR, "\n")
+  cat("Target DB: ", DB_STAGE1, "\n\n")
   
   # ---------------------------------------------------------------------------
-  # 1. Availability & Schema Check
+  # 2. Availability Check
   # ---------------------------------------------------------------------------
+  # If DB exists, check if it looks valid to avoid accidental overwrites
   if (dir.exists(DB_STAGE1) && length(list.files(DB_STAGE1, recursive = TRUE)) > 0) {
     cat("[INFO] Database directory exists. Checking schema...\n")
     tryCatch({
       ds <- arrow::open_dataset(DB_STAGE1)
-      missing_cols <- setdiff(EXPECTED_COLS, names(ds))
-      if (length(missing_cols) == 0) {
-        cat("[SUCCESS] Database is valid. Row: ", format(nrow(ds), big.mark=","), ". Column:", names(ds), "\n" , "Skipping rebuild.")
+      # Check for a critical column that only exists in processed Disease data
+      if ("CDR3_spanning_count" %in% names(ds)) {
+        cat("[SUCCESS] Database appears valid. Rows:", format(nrow(ds), big.mark=","), "\n")
+        cat("To force rebuild, delete the 'db_stage1' folder manually.\n")
         return(invisible(NULL))
-      } else {
-        cat("[WARNING] Missing columns:", paste(missing_cols, collapse=", "), "\n")
       }
-    }, error = function(e) cat("[WARNING] DB Check failed. Rebuilding.\n"))
+    }, error = function(e) cat("[WARNING] DB validation failed. Proceeding with rebuild.\n"))
   }
   
   # ---------------------------------------------------------------------------
-  # 2. Setup
+  # 3. File Selection (CRITICAL: Filter out Healthy)
   # ---------------------------------------------------------------------------
+  cat("Loading Metadata to select DISEASE files...\n")
   
-  # Load Metadata
   if (!file.exists(P$metadata_csv)) stop("Metadata missing")
   
-  # Load and Key Metadata
-  meta <- fread(P$metadata_csv, select = c("Filename", "Patient", "Disease", "BSource", "BType", "Isotype"))
-  meta <- meta[!is.na(Filename)]
-  setkey(meta, Filename)
+  # Load Metadata
+  meta <- fread(P$metadata_csv, select = c("Filename", "Disease"))
   
-  # Prepare Task List
-  files <- list.files(P$digest_csv_dir, pattern = "\\.csv\\.gz$", full.names = TRUE)
-  tasks <- data.table(path = files, filename = basename(files))
-  tasks <- tasks[filename %in% meta$Filename]
+  # 1. Get all parquet files in the digest folder
+  all_files <- list.files(INPUT_DIR, pattern = "\\.parquet$", full.names = TRUE)
+  file_dt   <- data.table(path = all_files, Filename = gsub("\\.parquet$", ".csv.gz", basename(all_files)))
   
-  cat("Processing", nrow(tasks), "files...\n")
+  # 2. Join with Metadata
+  #    Note: filenames in 'file_dt' derived from parquet need to match metadata 'Filename'
+  #    Adjust logic if your naming convention in 02 changed slightly.
+  #    Assuming 02 output: "filename.parquet" matches "filename.csv.gz" in metadata
+  tasks <- merge(file_dt, meta, by = "Filename")
   
-  # Clean/Create Staging
-  if (dir.exists(STAGING_DIR)) unlink(STAGING_DIR, recursive = TRUE)
-  dir.create(STAGING_DIR, recursive = TRUE, showWarnings = FALSE)
+  # 3. FILTER: Keep ONLY Disease Samples
+  #    Healthy samples (Disease == "None") have a different schema (Peptide only)
+  #    and cannot be merged into the Fact Table.
+  disease_tasks <- tasks[Disease != "None"]
   
-  # ---------------------------------------------------------------------------
-  # 3. Worker Function (Optimized)
-  # ---------------------------------------------------------------------------
-  stage_worker <- function(fp, fn, meta_row, out_dir) {
-    # Fast Read
-    dt <- fread(fp)
-    if (nrow(dt) == 0) return(NULL)
-    
-    # A. Defensive Metadata Merge
-    if (nrow(meta_row) != 1) {
-      stop(sprintf("Metadata error: %s maps to %d rows (must be 1)", fn, nrow(meta_row)))
-    }
-    
-    # B. Vectorized Overlap Calculation (stringi)
-    #    This is orders of magnitude faster than regexpr loop
-    if (all(c("Antibody", "Peptide", "cdr3_aa") %in% names(dt))) {
-      
-      # Get location matrices [start, end]
-      # Returns NA if not found
-      p_loc <- stringi::stri_locate_first_fixed(dt$Antibody, dt$Peptide)
-      c_loc <- stringi::stri_locate_first_fixed(dt$Antibody, dt$cdr3_aa)
-      
-      p_starts <- p_loc[,1]; p_ends <- p_loc[,2]
-      c_starts <- c_loc[,1]; c_ends <- c_loc[,2]
-      
-      # Identify invalid rows (missing patterns)
-      invalid <- is.na(p_starts) | is.na(c_starts)
-      
-      # Calculate Overlap: Intersection Length
-      # Formula: max(0, min(EndA, EndB) - max(StartA, StartB) + 1)
-      overlap <- pmax(0L, pmin(p_ends, c_ends) - pmax(p_starts, c_starts) + 1L)
-      
-      # Zero out invalids
-      overlap[invalid] <- 0L
-      
-      dt[, CDR3_spanning_count := overlap]
-    } else {
-      dt[, CDR3_spanning_count := 0L]
-    }
-    
-    # C. Attach Metadata
-    dt[, `:=`(
-      Patient = as.character(meta_row$Patient),
-      Disease = as.character(meta_row$Disease),
-      BSource = as.character(meta_row$BSource),
-      BType   = as.character(meta_row$BType),
-      Isotype = as.character(meta_row$Isotype),
-      filename = fn
-    )]
-    
-    # D. Flat Write (Faster I/O)
-    #    Write 1 parquet file per input. No partitioning yet.
-    #    We let DuckDB handle the partitioning shuffle later.
-    out_file <- file.path(out_dir, paste0(fn, ".parquet"))
-    arrow::write_parquet(dt, out_file, compression = "zstd")
-    
-    return(TRUE)
-  }
+  cat("Total Files Found:     ", nrow(tasks), "\n")
+  cat("Healthy Files (Skip):  ", nrow(tasks) - nrow(disease_tasks), "\n")
+  cat("Disease Files (Merge): ", nrow(disease_tasks), "\n")
+  
+  if (nrow(disease_tasks) == 0) stop("No Disease files found to process!")
   
   # ---------------------------------------------------------------------------
-  # 4. Execution (Parallel)
+  # 4. DuckDB Construction
   # ---------------------------------------------------------------------------
-  # Note: If memory issues occur, reduce workers = N_CORES to workers = 4
-  plan(multisession, workers = N_CORES) 
+  cat("\nInitializing DuckDB for assembly...\n")
   
-  res <- future_lapply(seq_len(nrow(tasks)), function(i) {
-    # Defensive lookup
-    m <- meta[J(tasks$filename[i])]
-    stage_worker(tasks$path[i], tasks$filename[i], m, STAGING_DIR)
-  })
-  
-  plan(sequential)
-  
-  # ---------------------------------------------------------------------------
-  # 5. Compaction & Partitioning (DuckDB)
-  # ---------------------------------------------------------------------------
-  cat("Compacting and Partitioning into Final DB...\n")
-  
-  con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  con <- dbConnect(duckdb::duckdb())
   on.exit(dbDisconnect(con, shutdown = TRUE))
   
+  # Memory & Thread Management
   dbExecute(con, paste0("PRAGMA memory_limit='", DUCKDB_MEMORY_LIMIT, "'"))
   dbExecute(con, paste0("PRAGMA threads=", N_CORES))
   
-  # Read from FLAT staging files
-  src_glob <- paste0(gsub("\\\\", "/", STAGING_DIR), "/*.parquet")
-  dest_path <- gsub("\\\\", "/", DB_STAGE1)
+  # ---------------------------------------------------------------------------
+  # 5. Execution: Bulk Copy
+  # ---------------------------------------------------------------------------
+  # Strategy: We pass the vector of filenames directly to DuckDB's read_parquet.
+  # This is much faster than creating a view or looping.
   
-  # DuckDB handles the heavy lifting of partitioning here
-  sql <- sprintf("
-    COPY (SELECT * FROM read_parquet('%s'))
+  # Create a temporary table containing the list of files to read
+  # DuckDB can read a list of files provided as a string list
+  # We format it as explicit SQL list: ['file1', 'file2', ...]
+  
+  # Windows path safety
+  safe_paths <- gsub("\\\\", "/", disease_tasks$path)
+  
+  # Create the output directory fresh
+  if (dir.exists(DB_STAGE1)) unlink(DB_STAGE1, recursive = TRUE)
+  dir.create(DB_STAGE1, recursive = TRUE)
+  
+  cat("Streaming", length(safe_paths), "files into Partitioned Parquet DB...\n")
+  
+  # We use a temporary view to inspect schema if needed, but COPY is most efficient.
+  # Note: partition_by(...) requires the columns to be present in the input.
+  # 02_digestion.R ensures 'Disease', 'BSource', etc. are in the parquet files.
+  
+  query <- sprintf("
+    COPY (
+      SELECT * FROM read_parquet([%s])
+    )
     TO '%s'
     (FORMAT PARQUET, PARTITION_BY (%s), COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000)
-  ", src_glob, dest_path, paste(PARTITION_COLS, collapse = ", "))
+  ", 
+                   paste(paste0("'", safe_paths, "'"), collapse = ", "), # 'path1', 'path2'
+                   gsub("\\\\", "/", DB_STAGE1),
+                   paste(PARTITION_COLS, collapse = ", ")
+  )
   
   tryCatch({
-    dbExecute(con, sql)
+    # Execute the massive copy
+    dbExecute(con, query)
     
-    # Cleanup only on success
-    cat("Success. Removing staging files...\n")
-    unlink(STAGING_DIR, recursive = TRUE)
-    cat("Fact Table Built: ", DB_STAGE1, "\n")
+    cat("\n[SUCCESS] Fact Table Built Successfully.\n")
+    cat("Location: ", DB_STAGE1, "\n")
     
   }, error = function(e) {
-    cat("[FATAL] DuckDB Compaction failed: ", conditionMessage(e), "\n")
-    cat("Staging files preserved in: ", STAGING_DIR, "\n")
+    cat("\n[FATAL] DuckDB Copy failed: ", conditionMessage(e), "\n")
+    stop("Build failed.")
   })
 }
 
