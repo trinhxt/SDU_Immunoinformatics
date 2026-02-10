@@ -133,7 +133,7 @@ main <- function() {
     #    We only need CDR3 and V/D/J for Disease analysis. 
     #    But reading them all is usually fast enough.
     cols_to_read <- c("sequence_alignment_aa", "v_call", "d_call", "j_call", "cdr3_aa")
-    tab <- arrow::read_csv_arrow(file_path, col_select = cols_to_read)
+    tab <- arrow::read_csv_arrow(file_path, col_select = all_of(cols_to_read))
     dt  <- as.data.table(tab)
     
     # Basic Clean
