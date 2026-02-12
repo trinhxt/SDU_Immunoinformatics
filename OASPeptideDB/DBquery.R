@@ -339,7 +339,7 @@ server <- function(input, output, session) {
         sendSweetAlert(session, "Success", paste0("Loaded:\n", vals$db_path), "success")
         
       }, error = function(e) {
-        sendSweetAlert(session, "Error", e$message, "error")
+        sendSweetAlert(session, "Error ", "No parquet files found in this folder.\n Please select a proper database folder.", "error")
         vals$db_loaded <- FALSE; shinyjs::show("db_folder_btn")
       })
     })
