@@ -11,7 +11,7 @@
 ##   - Bulk loading of file lists.
 ################################################################################
 
-source("scripts/00_config.R")
+if (!exists("P")) stop("Configuration 'P' not found. Please run this via DBbuild.R")
 
 suppressPackageStartupMessages({
   library(data.table)
