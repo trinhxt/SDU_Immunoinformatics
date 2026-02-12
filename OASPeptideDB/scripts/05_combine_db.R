@@ -22,13 +22,14 @@
 ##   - Memory Safety: Processes one Disease cohort at a time.
 ################################################################################
 
-source("scripts/00_config.R")
+if (!exists("P")) stop("Configuration 'P' not found. Please run this via DBbuild.R")
 
 suppressPackageStartupMessages({
   library(data.table)
   library(duckdb)
   library(arrow)
   library(dplyr)
+  library(utils) # for URLdecode
 })
 
 main <- function() {
@@ -117,10 +118,11 @@ main <- function() {
     dirs <- list.dirs(OUTPUT_DB, recursive = TRUE, full.names = FALSE)
     # Extract "X" from "Disease=X"
     disease_dirs <- grep("^Disease=", basename(dirs), value = TRUE)
-    completed_diseases <- gsub("^Disease=", "", disease_dirs)
+    encoded_names <- gsub("^Disease=", "", disease_dirs)
     
-    # Optional: Check if those folders actually contain parquet files
-    # (Skipped for speed, assuming folder existence implies completion)
+    # FIX: Decode URL-encoded names (e.g. "Allergy%2FNoSIT" -> "Allergy/NoSIT")
+    # This ensures they match the actual disease names in 'source_diseases'
+    completed_diseases <- sapply(encoded_names, function(x) utils::URLdecode(x), USE.NAMES = FALSE)
   }
   
   # Calculate what is left to do
@@ -132,8 +134,18 @@ main <- function() {
     return(invisible(NULL))
   }
   
-  cat("      Already Done: ", length(completed_diseases), "\n")
-  cat("      Remaining:    ", length(missing_diseases), "\n")
+  # List Status
+  if (length(completed_diseases) > 0) {
+    cat("      Already Done (", length(completed_diseases), "):\n", sep="")
+    cat(paste0("       - ", completed_diseases), sep = "\n")
+  } else {
+    cat("      Already Done: 0\n")
+  }
+  
+  if (length(missing_diseases) > 0) {
+    cat("      Remaining (", length(missing_diseases), "):\n", sep="")
+    cat(paste0("       - ", missing_diseases), sep = "\n")
+  }
   
   # ---------------------------------------------------------------------------
   # 5. Build Process (Resume Loop)
@@ -154,7 +166,7 @@ main <- function() {
     
     # Note on Output:
     # We use PARTITION_BY to maintain the clinical hierarchy.
-    # DuckDB will create the 'Disease=X' folder automatically.
+    # DuckDB will automatically URL-encode special chars in partition folders (e.g. "/" -> "%2F").
     
     sql <- sprintf("
       COPY (
