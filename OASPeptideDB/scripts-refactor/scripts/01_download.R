@@ -8,11 +8,12 @@
 ##   2. Download to raw folder.
 ##   3. Parse Metadata (Handling NaN, quotes, escaping).
 ##   4. Save Processed Data to 'antibody' folder.
-##   5. Append Metadata to 'OAS_metadata.csv' incrementally.
+##   5. Append Metadata to 'OAS_metadata.csv' incrementally (SCHEMA SAFE).
 ##   6. FINALIZE: Generate 'Patient' column (Author + Subject) at the end.
 ##
 ## RESUME LOGIC:
 ##   - Checks P$processed_dir. If file exists -> SKIP.
+##   - Safely handles column reordering during resume.
 ################################################################################
 
 # ------------------------------------------------------------------------------
@@ -154,6 +155,12 @@ main <- function() {
   processed_count <- 0
   failed_count    <- 0
   
+  # --- Define Standard Column Order (Preferred) ---
+  # This ensures the first file creates a sensible schema
+  STD_COLS <- c("Run", "Link", "Author", "Species", "BSource", "BType", "Age", 
+                "Subject", "Disease", "Longitudinal", "Vaccine", "Chain", 
+                "Unique sequences", "Total sequences", "Isotype", "Filename")
+  
   # --- Loop Start ---
   for (i in seq_len(n_total)) {
     url <- urls[i]
@@ -172,19 +179,49 @@ main <- function() {
     if (isTRUE(res$ok)) {
       processed_count <- processed_count + 1
       
-      # 3. Append Metadata Immediately
+      # 3. Append Metadata Immediately (SCHEMA SAFE)
       if (!is.null(res$meta)) {
         
-        # Flatten list columns to characters
+        # A. Flatten list columns to strings
         res$meta <- res$meta[, lapply(.SD, function(col) {
           if (is.list(col)) return(sapply(col, toString))
           return(col)
         })]
         
-        # Append to CSV
+        # B. Handle Schema Alignment
         if (file.exists(meta_file)) {
+          # Case: Appending to existing file. 
+          # MUST match the existing file's column order exactly.
+          
+          # Read header only to get target schema
+          target_cols <- names(fread(meta_file, nrows = 0))
+          
+          # Add any columns missing in the new row (fill NA)
+          # (e.g. if file has 'Patient' from previous run, but new row doesn't yet)
+          missing_cols <- setdiff(target_cols, names(res$meta))
+          if (length(missing_cols) > 0) {
+            res$meta[, (missing_cols) := NA]
+          }
+          
+          # Reorder columns to match file exactly
+          res$meta <- res$meta[, ..target_cols]
+          
           fwrite(res$meta, meta_file, append = TRUE)
+          
         } else {
+          # Case: Creating new file. 
+          # Use Standard Schema to prevent random JSON order from setting bad precedent.
+          
+          # Ensure all standard columns exist
+          missing_std <- setdiff(STD_COLS, names(res$meta))
+          if (length(missing_std) > 0) {
+            res$meta[, (missing_std) := NA]
+          }
+          
+          # Keep any extra columns the JSON might have, but put STD_COLS first
+          final_cols <- c(STD_COLS, setdiff(names(res$meta), STD_COLS))
+          res$meta <- res$meta[, ..final_cols]
+          
           fwrite(res$meta, meta_file, append = FALSE)
         }
         
@@ -201,7 +238,6 @@ main <- function() {
   }
   
   # --- Finalize Metadata (Add Patient Column) ---
-  # We do this at the end so ID generation is consistent across the whole dataset
   if (file.exists(meta_file)) {
     cat("\nFinalizing Metadata (Generating Patient IDs)...\n")
     metadata_df <- fread(meta_file)
