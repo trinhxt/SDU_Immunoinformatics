@@ -26,15 +26,10 @@
 ## 5. Saves result as Flat PARQUET Files (One per input).
 ##
 ## Updates:
-## - Logic: Split processing for Healthy vs. Disease.
-## - Format: Parquet with ZSTD compression.
-## - UI: Added Progress Bar (progressr).
+## - FIX: Uses direct handler function to avoid 'is.function(handler)' error.
 ################################################################################
 
-# ==============================================================================
-# Load Configuration
-# ==============================================================================
-source("scripts/00_config.R")
+if (!exists("P")) stop("Configuration 'P' not found. Please run this via DBbuild.R")
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -44,13 +39,9 @@ suppressPackageStartupMessages({
   library(future)
   library(future.apply)
   library(dplyr)
-  library(progressr) # Added for progress bar
-  library(stringi)   # Added for fast vectorized string operations
+  library(progressr) 
+  library(stringi)
 })
-
-# Enable global progress handlers
-handlers(global = TRUE)
-handlers("txtprogressbar") 
 
 main <- function() {
   
@@ -129,9 +120,6 @@ main <- function() {
     is_healthy <- (meta_row$Disease == "None")
     
     # 1. Read Data
-    #    We need Sequence Alignment for everyone.
-    #    We only need CDR3 and V/D/J for Disease analysis. 
-    #    But reading them all is usually fast enough.
     cols_to_read <- c("sequence_alignment_aa", "v_call", "d_call", "j_call", "cdr3_aa")
     tab <- arrow::read_csv_arrow(file_path, col_select = all_of(cols_to_read))
     dt  <- as.data.table(tab)
@@ -170,19 +158,9 @@ main <- function() {
     # 4. BRANCH: HEALTHY PROCESSING
     # -------------------------------------------------------------------------
     if (is_healthy) {
-      
-      # Logic: 
-      # - We keep ALL peptides (CDR3 + Framework) to serve as a comprehensive background.
-      # - We DO NOT calculate overlap (saves compute).
-      # - We save ONLY the Peptide column (saves huge disk space).
-      
-      # Unique Peptides only for this file (we don't need counts for background)
       final_dt <- unique(pep_dt[, .(Peptide)])
-      
-      # Write result immediately
       out_fn   <- gsub("\\.csv\\.gz$", ".parquet", fn)
       out_file <- file.path(out_dir, out_fn)
-      
       arrow::write_parquet(final_dt, out_file, compression = "zstd", compression_level = 15)
       return(invisible(TRUE))
     }
@@ -214,7 +192,6 @@ main <- function() {
     pep_dt[, CDR3_spanning_pct := ifelse(cdr3_len > 0, overlap / cdr3_len, 0)]
     
     # C. FILTER: Strict CDR3 Overlap for Disease
-    #    We only want peptides that actually represent the hypervariable region.
     pep_dt <- pep_dt[CDR3_spanning_count > 0]
     
     if (nrow(pep_dt) == 0) return(invisible(TRUE))
@@ -254,6 +231,7 @@ main <- function() {
   
   if (.Platform$OS.type == "windows") plan(multisession, workers = N_CORES) else plan(multicore, workers = N_CORES)
   
+  # FIX: Pass the function OBJECT 'handler_txtprogressbar', not the string "txtprogressbar"
   with_progress({
     p <- progressor(along = 1:nrow(tasks_to_run))
     
@@ -277,7 +255,7 @@ main <- function() {
         return(list(fn = fn, ok = FALSE, msg = conditionMessage(e)))
       })
     })
-  })
+  }, handlers = progressr::handler_txtprogressbar) # <-- Use explicit function reference
   
   plan(sequential)
   
