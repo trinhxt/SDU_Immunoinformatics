@@ -76,5 +76,3 @@ P <- list(
 )
 
 message("Configuration loaded.")
-message(" - Processed Input: ", P$processed_dir)
-message(" - Final Output DB: ", P$db_stage1)
