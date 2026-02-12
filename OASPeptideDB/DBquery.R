@@ -9,6 +9,36 @@
 # 4. Exports filtered data to Parquet, FASTA, and Summary Text reports.
 # ==============================================================================
 
+
+# ------------------------------------------------------------------------------
+# 0. AUTOMATED PACKAGE INSTALLATION & LOADING
+# ------------------------------------------------------------------------------
+required_packages <- c(
+  "shiny",          # Web application framework
+  "shinythemes",    # Visual themes (Cerulean)
+  "shinyjs",        # JavaScript integration
+  "shinyWidgets",   # Fancy UI widgets and alerts
+  "shinyBS",        # Bootstrap tooltips and popovers
+  "DBI",            # Database Interface
+  "duckdb",         # High-performance analytical database
+  "DT",             # Interactive data tables
+  "data.table",     # High-speed data manipulation
+  "shinyFiles",     # OS-native file dialogs
+  "BiocManager",    # Manager for Bioconductor packages
+  "svDialogs",      # System-level save dialogs
+  "tools"           # Path and file utilities
+)
+
+# Install CRAN packages if missing
+new_packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages)
+
+# Special handling for Bioconductor packages (Biostrings)
+if (!requireNamespace("Biostrings", quietly = TRUE)) {
+  if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+  BiocManager::install("Biostrings", update = FALSE, ask = FALSE)
+}
+
 suppressPackageStartupMessages({
   # Core Shiny libraries for UI and Server logic
   library(shiny)
@@ -336,10 +366,18 @@ server <- function(input, output, session) {
         vals$db_loaded <- TRUE
         vals$db_path <- norm_path(path)
         shinyjs::hide("db_folder_btn") # Hide manual browse button on success
-        sendSweetAlert(session, "Success", paste0("Loaded:\n", vals$db_path), "success")
+        sendSweetAlert(session, "Success", paste0("Database loaded:\n", vals$db_path), "success")
         
       }, error = function(e) {
-        sendSweetAlert(session, "Error ", "No parquet files found in this folder.\n Please select a proper database folder.", "error")
+        sendSweetAlert(
+          session = session,
+          title = "Error",
+          # Use the <br> tag for the line break
+          text = HTML("No parquet files found in this folder.<br>Please select a proper database folder."),
+          type = "error",
+          # This argument is required to render the HTML tag
+          html = TRUE
+        )
         vals$db_loaded <- FALSE; shinyjs::show("db_folder_btn")
       })
     })
