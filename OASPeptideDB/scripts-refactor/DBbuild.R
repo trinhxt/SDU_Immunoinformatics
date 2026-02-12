@@ -86,7 +86,7 @@ cat("=== OAS Pipeline Setup ===\n")
 # Select Data Directory
 # We ask the user to select the ROOT folder of their data.
 user_selected_dir <- dlg_dir(default = getwd(), 
-                             title = "Select your Data Root Folder (e.g. 'unpaired')")$res
+                             title = "Select your Data Root Folder (at least 200GB free space)")$res
 
 if (length(user_selected_dir) == 0) {
   stop("Operation cancelled: No directory selected.")
