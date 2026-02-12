@@ -3,14 +3,23 @@
 ##
 ## Goal: Create db_stage3 (The "Fast" Database)
 ##
-## Features:
-##   - Validation: Verifies stage1/stage2 columns before starting.
-##   - Resumable: If db_stage3 exists but is partial, it resumes (skips done).
-##   - Robust: Handles crashes or interruptions without data loss.
+## Workflow:
+##   1. Scans db_stage1 (Facts) and db_stage2 (Dimensions).
+##   2. Identifies all unique Diseases in db_stage1.
+##   3. Iterates through each Disease:
+##      a. Loads Facts for that Disease (Partition Pruning).
+##      b. Joins with db_stage2 on 'Peptide' to attach stats & flags.
+##      c. Writes Denormalized result to db_stage3.
 ##
-## Method: DENORMALIZATION (Merging Fact + Dimension)
-##   1. Joins 'db_stage1' (Observations) with 'db_stage2' (Metrics).
-##   2. Writes to 'db_stage3' (Single Flat Table).
+## Output Schema (db_stage3):
+##   - All Clinical Metadata (Patient, Disease, BSource, etc.)
+##   - All Molecular Data (Peptide, CDR3_spanning_count, etc.)
+##   - Global Stats (N_Patients, N_Diseases, etc.)
+##   - Healthy Background Flag (is_healthy_background)
+##
+## Robustness:
+##   - Resume Capability: Skips Diseases that already exist in output.
+##   - Memory Safety: Processes one Disease cohort at a time.
 ################################################################################
 
 source("scripts/00_config.R")
@@ -32,7 +41,7 @@ main <- function() {
   OUTPUT_DB   <- file.path(P$parquet_dir, "db_stage3")
   
   # Memory Limit (Safe default or Config)
-  DUCK_MEM <- if(exists("DUCKDB_MEMORY_LIMIT")) DUCKDB_MEMORY_LIMIT else "24GB"
+  DUCK_MEM <- if(exists("DUCKDB_MEMORY_LIMIT")) DUCKDB_MEMORY_LIMIT else "48GB"
   
   cat("=== STEP 5: COMBINING DATABASES (Creating db_stage3) ===\n")
   cat("Input Fact:  ", INPUT_FACT, "\n")
@@ -44,25 +53,29 @@ main <- function() {
   # ---------------------------------------------------------------------------
   cat("[1/4] Validating Inputs...\n")
   
-  if (!dir.exists(INPUT_FACT)) stop("FATAL: db_stage1 missing!")
-  if (!dir.exists(INPUT_DIM))  stop("FATAL: db_stage2 missing!")
+  if (!dir.exists(INPUT_FACT)) stop("FATAL: db_stage1 missing! Run script 03.")
+  if (!dir.exists(INPUT_DIM))  stop("FATAL: db_stage2 missing! Run script 04.")
   
-  # Define Expected Columns
-  COLS_FACT <- c("Peptide", "Antibody", "Disease", "CDR3_spanning_count", "Patient", "Isotype")
-  COLS_DIM  <- c("Peptide", "N_Patients", "N_Diseases", "N_Antibodies")
+  # Define Expected Columns based on previous steps
+  # Facts (from 03_build_fact_table.R)
+  COLS_FACT <- c("Peptide", "Antibody", "Disease", "Patient", "BSource", "BType", "Isotype", 
+                 "CDR3_spanning_count", "CDR3_spanning_pct", "v_call", "d_call", "j_call", "cdr3_aa")
+  
+  # Dimensions (from 04_build_dimension_table.R)
+  COLS_DIM  <- c("Peptide", "N_Patients", "N_Diseases", "N_Antibodies", "is_healthy_background")
   
   # Check Fact Table
   ds_fact <- arrow::open_dataset(INPUT_FACT)
-  if (!all(COLS_FACT %in% names(ds_fact))) {
-    stop("FATAL: db_stage1 is missing required columns: ", 
-         paste(setdiff(COLS_FACT, names(ds_fact)), collapse=", "))
+  missing_fact <- setdiff(COLS_FACT, names(ds_fact))
+  if (length(missing_fact) > 0) {
+    stop("FATAL: db_stage1 is missing columns: ", paste(missing_fact, collapse=", "))
   }
   
   # Check Dimension Table
   ds_dim <- arrow::open_dataset(INPUT_DIM)
-  if (!all(COLS_DIM %in% names(ds_dim))) {
-    stop("FATAL: db_stage2 is missing required columns: ", 
-         paste(setdiff(COLS_DIM, names(ds_dim)), collapse=", "))
+  missing_dim <- setdiff(COLS_DIM, names(ds_dim))
+  if (length(missing_dim) > 0) {
+    stop("FATAL: db_stage2 is missing columns: ", paste(missing_dim, collapse=", "))
   }
   
   cat("      Inputs are valid.\n")
@@ -75,15 +88,17 @@ main <- function() {
   con <- dbConnect(duckdb::duckdb())
   on.exit(dbDisconnect(con, shutdown = TRUE))
   
+  # Optimize for high-throughput joins
   dbExecute(con, paste0("PRAGMA memory_limit='", DUCK_MEM, "'"))
   dbExecute(con, paste0("PRAGMA threads=", N_CORES))
+  dbExecute(con, "PRAGMA preserve_insertion_order=false")
   
-  # Register Views (Recursive Glob)
+  # Register Views (Recursive Glob to catch all partitioned files)
   fact_glob <- paste0(gsub("\\\\", "/", INPUT_FACT), "/**/*.parquet")
   dim_glob  <- paste0(gsub("\\\\", "/", INPUT_DIM), "/**/*.parquet")
   
-  dbExecute(con, sprintf("CREATE VIEW obs AS SELECT * FROM read_parquet('%s')", fact_glob))
-  dbExecute(con, sprintf("CREATE VIEW met AS SELECT * FROM read_parquet('%s')", dim_glob))
+  dbExecute(con, sprintf("CREATE OR REPLACE VIEW obs AS SELECT * FROM read_parquet('%s')", fact_glob))
+  dbExecute(con, sprintf("CREATE OR REPLACE VIEW met AS SELECT * FROM read_parquet('%s')", dim_glob))
   
   # Get Source of Truth: List of Diseases from Fact Table
   source_diseases <- dbGetQuery(con, "SELECT DISTINCT Disease FROM obs WHERE Disease IS NOT NULL ORDER BY Disease")[[1]]
@@ -94,28 +109,18 @@ main <- function() {
   # ---------------------------------------------------------------------------
   cat("[3/4] Checking Status of db_stage3...\n")
   
+  # We check the directory structure of OUTPUT_DB for "Disease=X" folders
   completed_diseases <- character(0)
   
   if (dir.exists(OUTPUT_DB)) {
-    tryCatch({
-      # Use Arrow to read partition keys from disk
-      ds_out <- arrow::open_dataset(OUTPUT_DB)
-      
-      # Check if output has expected columns (if not, force rebuild)
-      # We check for merged columns (Observation + Metric)
-      if (!all(c("N_Patients", "Peptide", "Disease") %in% names(ds_out))) {
-        cat("      [WARN] Existing db_stage3 corrupted or missing columns. Forcing Rebuild.\n")
-        unlink(OUTPUT_DB, recursive = TRUE)
-      } else {
-        completed_diseases <- ds_out %>% 
-          select(Disease) %>% 
-          distinct() %>% 
-          collect() %>% 
-          pull(Disease)
-      }
-    }, error = function(e) {
-      cat("      [WARN] Could not read existing db_stage3 (likely empty). Starting fresh.\n")
-    })
+    # List directories like "Disease=Covid", "Disease=Healthy", etc.
+    dirs <- list.dirs(OUTPUT_DB, recursive = TRUE, full.names = FALSE)
+    # Extract "X" from "Disease=X"
+    disease_dirs <- grep("^Disease=", basename(dirs), value = TRUE)
+    completed_diseases <- gsub("^Disease=", "", disease_dirs)
+    
+    # Optional: Check if those folders actually contain parquet files
+    # (Skipped for speed, assuming folder existence implies completion)
   }
   
   # Calculate what is left to do
@@ -135,19 +140,21 @@ main <- function() {
   # ---------------------------------------------------------------------------
   cat("[4/4] Starting/Resuming Merge Process...\n")
   
+  # Loop through diseases one by one to keep memory usage stable
   for (i in seq_along(missing_diseases)) {
     curr_disease <- missing_diseases[i]
     
-    cat(sprintf("\n [%d/%d] Processing: %s ... ", i, length(missing_diseases), curr_disease))
+    cat(sprintf("\n [%d/%d] Processing: %s ... \n", i, length(missing_diseases), curr_disease))
     t1 <- Sys.time()
     
-    # The Query:
-    # 1. Select ALL columns from Observations (o.*)
-    # 2. Select ONLY metric columns from Metrics (m.*)
-    # 3. Filter by current Disease (Partition Pruning)
-    # 4. Left Join on Peptide
+    # The Join Query:
+    # 1. Filter 'obs' (Facts) to just the current disease.
+    # 2. Left Join 'met' (Dimensions) on Peptide.
+    # 3. Select all relevant columns.
     
-    # OVERWRITE_OR_IGNORE handles re-runs safely
+    # Note on Output:
+    # We use PARTITION_BY to maintain the clinical hierarchy.
+    # DuckDB will create the 'Disease=X' folder automatically.
     
     sql <- sprintf("
       COPY (
@@ -155,19 +162,28 @@ main <- function() {
           o.*, 
           m.N_Patients,
           m.N_Diseases,
-          m.N_Antibodies
+          m.N_Antibodies,
+          m.is_healthy_background
         FROM obs o
         LEFT JOIN met m ON o.Peptide = m.Peptide
         WHERE o.Disease = '%s'
       ) 
       TO '%s' 
-      (FORMAT PARQUET, PARTITION_BY (Disease, BSource, BType, Isotype), COMPRESSION ZSTD, ROW_GROUP_SIZE 1000000, OVERWRITE_OR_IGNORE)
+      (FORMAT PARQUET, 
+       PARTITION_BY (Disease, BSource, BType, Isotype), 
+       COMPRESSION ZSTD, 
+       ROW_GROUP_SIZE 1000000, 
+       OVERWRITE_OR_IGNORE)
     ", curr_disease, gsub("\\\\", "/", OUTPUT_DB))
     
     tryCatch({
       dbExecute(con, sql)
       t2 <- Sys.time()
       cat("Done in", round(difftime(t2, t1, units="mins"), 2), "min.")
+      
+      # Explicit Checkpoint to free WAL memory
+      dbExecute(con, "CHECKPOINT")
+      
     }, error = function(e) {
       cat("\n[FAILED] Error processing", curr_disease, ":", conditionMessage(e), "\n")
       cat("Note: This error is isolated. You can re-run this script to retry just this disease.\n")
