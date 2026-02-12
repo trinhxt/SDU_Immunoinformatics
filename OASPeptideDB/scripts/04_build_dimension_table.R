@@ -35,10 +35,10 @@
 ##
 ## Resume support:
 ##   - Set RESUME <- TRUE to skip work that already exists on disk.
-##   - Each step checks for expected outputs and continues from where it left off.
+##   - Checks final DB partitions and schema validity before starting.
 ################################################################################
 
-source("scripts/00_config.R")
+if (!exists("P")) stop("Configuration 'P' not found. Please run this via DBbuild.R")
 
 suppressPackageStartupMessages({
   library(duckdb)
@@ -82,10 +82,61 @@ main <- function() {
   cat("Resume mode:  ", ifelse(RESUME, "ON", "OFF (clean rebuild)"), "\n\n", sep = "")
   
   # ---------------------------------------------------------------------------
-  # 2. Validation
+  # 2. Validation & Fast Skip
   # ---------------------------------------------------------------------------
   if (!dir.exists(FACT_DB)) stop("Fact Table missing!")
   if (!file.exists(META_FILE)) stop("Metadata CSV missing!")
+  
+  # Check if final DB is already complete and valid (Fast Skip)
+  if (dir.exists(OUTPUT_DB) && RESUME) {
+    cat("Checking existing partitions and schema in db_stage2...\n")
+    
+    # A. Partition Count Check
+    # We expect 128 partitions: partition_id=0 ... partition_id=127
+    # And inside each, a part-XXX.parquet file.
+    missing_parts <- 0
+    for (i in 0:(N_PARTS - 1L)) {
+      pfile <- file.path(OUTPUT_DB, paste0("partition_id=", i), sprintf("part-%03d.parquet", i))
+      if (!file.exists(pfile)) {
+        missing_parts <- missing_parts + 1
+      }
+    }
+    
+    # B. Schema Check (only if partitions look okay)
+    schema_ok <- FALSE
+    if (missing_parts == 0) {
+      # Open the first partition to validate schema
+      tryCatch({
+        test_file <- file.path(OUTPUT_DB, "partition_id=0", "part-000.parquet")
+        ds <- arrow::open_dataset(test_file)
+        actual_cols <- names(ds)
+        
+        # Required columns for db_stage2
+        required_cols <- c("Peptide", "N_Diseases", "N_Patients", "N_Antibodies", 
+                           "is_healthy_background", "partition_id")
+        
+        if (all(required_cols %in% actual_cols)) {
+          schema_ok <- TRUE
+        } else {
+          cat("[WARNING] Schema mismatch in existing db_stage2.\n")
+          cat("Expected:", paste(required_cols, collapse=", "), "\n")
+          cat("Found:   ", paste(actual_cols, collapse=", "), "\n")
+        }
+      }, error = function(e) {
+        cat("[WARNING] Failed to read existing db_stage2 for validation:", conditionMessage(e), "\n")
+      })
+    }
+    
+    # C. Decision
+    if (missing_parts == 0 && schema_ok) {
+      cat("[SUCCESS] db_stage2 is complete and valid (128 partitions, correct schema).\n")
+      cat("Skipping Step 4.\n")
+      return(invisible(NULL))
+    } else {
+      cat(sprintf("[INFO] db_stage2 incomplete or invalid. Missing partitions: %d. Schema OK: %s. Resuming build...\n\n", 
+                  missing_parts, schema_ok))
+    }
+  }
   
   # ---------------------------------------------------------------------------
   # 3. Initialize DuckDB (temporary build DB)
@@ -158,7 +209,7 @@ main <- function() {
     any(grepl("partition_id=", list.files(disease_stats_dir, recursive = TRUE, full.names = TRUE)))
   }
   
-  # Helper: check if final output seems completed
+  # Helper: check if final output seems completed (per partition)
   has_final_partition <- function(pid) {
     out_file <- file.path(OUTPUT_DB, paste0("partition_id=", pid), sprintf("part-%03d.parquet", pid))
     file.exists(out_file)
@@ -207,14 +258,6 @@ main <- function() {
   # ---------------------------------------------------------------------------
   # 8. Stream healthy background into per-batch directories (FIXED)
   # ---------------------------------------------------------------------------
-  # IMPORTANT FIX:
-  #   DuckDB COPY to a dataset directory will error if the directory is non-empty.
-  #   Your error happened because Batch 2 tried to write to the same dataset root.
-  #
-  # Solution:
-  #   Write each batch into its own unique directory:
-  #     healthy_batches_part/batch_<b>/
-  #
   cat("[2/4] Streaming healthy background into partitioned batch parquet...\n")
   
   if (length(healthy_paths) == 0) {
@@ -333,8 +376,6 @@ main <- function() {
       }
       
       # Read all batch outputs for this partition_id:
-      # batches are stored at:
-      #   healthy_batches_part/batch_XXX/partition_id=<pid>/*.parquet
       in_glob <- paste0(healthy_batches_dir, "/batch_*/partition_id=", pid, "/*.parquet")
       pid_files <- Sys.glob(in_glob)
       
