@@ -153,7 +153,6 @@ ui <- fluidPage(
     }
     
     /* [NEW] FIXED TOOLTIP WIDTH (Aggressive Override) */
-    /* using 'body' prefix ensures this overrides the theme defaults */
     body .tooltip-inner {
       background-color: #ffffff !important;   /* White background */
       color: #333333 !important;              /* Dark text */
@@ -161,15 +160,14 @@ ui <- fluidPage(
       box-shadow: 0 4px 15px rgba(0,0,0,0.15); /* Shadow */
       
       /* WIDTH SETTINGS */
-      min-width: 250px !important;            /* Ensure it is never too small */
-      max-width: 600px !important;            /* Allow it to be very wide */
+      min-width: 250px !important;            
+      max-width: 600px !important;            
       
       font-size: 13px;
       padding: 12px;
       text-align: left;
     }
     
-    /* Arrow color fix */
     body .tooltip.right .tooltip-arrow {
       border-right-color: #cccccc !important; 
     }
@@ -204,14 +202,14 @@ ui <- fluidPage(
                  div(class = "panel-container",
                      div(class = "custom-header", "3. Specificity & Quality"),
                      
-                     # --- CDR3 Spanning with Tooltip ---
+                     # --- CDR3 Spanning with Tooltip [UPDATED] ---
                      radioButtons("logic_cdr3", 
                                   label = tagList(
-                                    "CDR3 Spanning",
+                                    "CDR3 Spanning (Coverage %)",
                                     tags$span(id = "tip_cdr3", icon("info-circle"), class = "info-icon"),
-                                    bsTooltip("tip_cdr3", "Number of amino acids overlapping the CDR3 hypervariable region. High overlap (>3 AA) increases confidence in specific antibody identification.", placement = "right", trigger = "hover")
+                                    bsTooltip("tip_cdr3", "Percentage of the CDR3 region covered by the peptide overlap. Low (<10%), Medium (10-30%), High (>30%).", placement = "right", trigger = "hover")
                                   ),
-                                  choices = c("All"="all","None (0 AA)"="none","Low (1-3 AA)"="low","High (>3 AA)"="high"), selected = "high"),
+                                  choices = c("All"="all", "Low (<10%)"="low", "Medium (10-30%)"="medium", "High (>30%)"="high"), selected = "high"),
                      
                      # --- Disease Specificity with Tooltip ---
                      radioButtons("logic_specificity", 
@@ -304,7 +302,6 @@ server <- function(input, output, session) {
   })
   
   # --- Function: Load Database ---
-  # Scans folder for .parquet files and registers them as a DuckDB View
   load_database <- function(path) {
     withProgress(message = 'Initializing Database', value = 0, {
       tryCatch({
@@ -320,7 +317,6 @@ server <- function(input, output, session) {
         dbExecute(con, sprintf("CREATE VIEW data AS SELECT * FROM read_parquet('%s')", glob))
         
         # --- Populate Metadata Dropdowns ---
-        # Fetch distinct values for dropdowns to ensure valid selections
         incProgress(0.2, detail = "Extracting Disease metadata...")
         dis <- dbGetQuery(con, "SELECT DISTINCT Disease FROM data WHERE Disease IS NOT NULL ORDER BY Disease")
         if (nrow(dis) == 0) stop("No data found.")
@@ -350,7 +346,6 @@ server <- function(input, output, session) {
   }
   
   # --- Auto-Detection Logic ---
-  # Checks common folder names at startup to see if DB exists locally
   observe({
     candidates <- c("db_stage3", "OASpepDB", "OASpeptideDB")
     found <- NULL
@@ -371,11 +366,6 @@ server <- function(input, output, session) {
   })
   
   # --- Query Builder Function ---
-  # Dynamically constructs the SQL string based on all UI inputs.
-  # args:
-  #    count_only: If TRUE, returns aggregate stats instead of rows.
-  #    limit: Limits number of rows (for preview).
-  #    custom_select: Overrides the columns selected (used for specific exports).
   get_sql_query <- function(count_only = FALSE, limit = NULL, custom_select = NULL) {
     req(vals$db_loaded, length(input$filter_disease) > 0, input$filter_disease[1] != "None")
     
@@ -384,9 +374,13 @@ server <- function(input, output, session) {
     # Determine columns to select
     sel <- if (!is.null(custom_select)) custom_select 
     else if (count_only) "COUNT(*) as n, COUNT(DISTINCT Peptide) as n_pep, COUNT(DISTINCT Patient) as n_pat, COUNT(DISTINCT Antibody) as n_ab, MIN(N_Patients) as min_p, MAX(N_Patients) as max_p" 
-    else "Peptide, Disease, Patient, Isotype, CDR3_spanning_count, N_Patients, N_Diseases, N_Antibodies, cdr3_aa, Antibody, filename"
+    else "Peptide, Disease, Patient, Isotype, CDR3_spanning_pct, CDR3_spanning_count, N_Patients, N_Diseases, N_Antibodies, cdr3_aa, Antibody, filename"
     
     q <- sprintf("SELECT %s FROM data WHERE 1=1", sel)
+    
+    # --- [NEW] UNDERGROUND FILTER ---
+    # Strictly exclude any peptides found in the healthy background.
+    q <- paste0(q, " AND is_healthy_background = FALSE")
     
     # Apply Clinical Filters
     f_dis <- val(input$filter_disease)
@@ -398,11 +392,12 @@ server <- function(input, output, session) {
     f_iso <- val(input$filter_isotype)
     if (f_iso != "All") q <- paste0(q, sprintf(" AND Isotype = '%s'", f_iso))
     
-    # Apply Logic Filters
+    # Apply Logic Filters (Updated for Percentages)
     l_cdr3 <- val(input$logic_cdr3)
-    if (l_cdr3 == "none") q <- paste0(q, " AND CDR3_spanning_count = 0")
-    else if (l_cdr3 == "low") q <- paste0(q, " AND CDR3_spanning_count BETWEEN 1 AND 3")
-    else if (l_cdr3 == "high") q <- paste0(q, " AND CDR3_spanning_count > 3")
+    if (l_cdr3 == "low")         q <- paste0(q, " AND CDR3_spanning_pct <= 0.1")
+    else if (l_cdr3 == "medium") q <- paste0(q, " AND CDR3_spanning_pct > 0.1 AND CDR3_spanning_pct <= 0.3")
+    else if (l_cdr3 == "high")   q <- paste0(q, " AND CDR3_spanning_pct > 0.3")
+    # 'all' implies no extra filter on CDR3
     
     if (val(input$logic_specificity) == "specific") q <- paste0(q, " AND N_Diseases = 1")
     if (val(input$logic_specificity) == "shared")   q <- paste0(q, " AND N_Diseases > 1")
@@ -411,7 +406,7 @@ server <- function(input, output, session) {
     if (val(input$logic_patients) == "single")      q <- paste0(q, " AND N_Patients = 1")
     if (val(input$logic_patients) == "multi")       q <- paste0(q, " AND N_Patients > 1")
     
-    # Apply Limit (only if not counting or custom selecting)
+    # Apply Limit
     if (!is.null(limit) && !count_only && is.null(custom_select)) q <- paste0(q, " LIMIT ", limit)
     return(q)
   }
@@ -426,7 +421,7 @@ server <- function(input, output, session) {
       incProgress(0.2, detail = "Counting records...")
       res <- tryCatch(dbGetQuery(con, get_sql_query(count_only = TRUE)), error = function(e) data.frame(n=0, n_pep=0))
       
-      # Get Metadata Summaries (which sources exist in this filter slice?)
+      # Get Metadata Summaries
       incProgress(0.5, detail = "Analyzing metadata categories...")
       res_meta <- tryCatch(dbGetQuery(con, get_sql_query(custom_select = "DISTINCT BSource, BType, Isotype")), error = function(e) data.frame())
       
@@ -436,8 +431,12 @@ server <- function(input, output, session) {
       incProgress(0.3, detail = "Rendering...")
     })
     
-    # UI Label Map
-    map_dict <- list("all"="All", "none"="None (0 AA)", "low"="Low (1-3 AA)", "high"="High (>3 AA)", "specific"="Disease-Exclusive", "shared"="Shared", "unique"="Unique", "common"="Common", "single"="Singleton", "multi"="Recurring")
+    # UI Label Map (Updated)
+    map_dict <- list("all"="All", 
+                     "low"="Low (<10%)", "medium"="Medium (10-30%)", "high"="High (>30%)", 
+                     "specific"="Disease-Exclusive", "shared"="Shared", 
+                     "unique"="Unique", "common"="Common", 
+                     "single"="Singleton", "multi"="Recurring")
     lab <- function(x) map_dict[[x[1]]] %||% x[1]
     
     # Render HTML Block
@@ -449,10 +448,11 @@ server <- function(input, output, session) {
       div(class="summary-stat", span("Sources:"), strong(uniq_s)),
       div(class="summary-stat", span("Types:"), strong(uniq_t)),
       div(class="summary-stat", span("Isotypes:"), strong(uniq_i)),
-      div(class="summary-stat", span("CDR3 Spanning:"), strong(lab(input$logic_cdr3))),
+      div(class="summary-stat", span("CDR3 Coverage:"), strong(lab(input$logic_cdr3))),
       div(class="summary-stat", span("Specificity:"), strong(lab(input$logic_specificity))),
       div(class="summary-stat", span("Uniqueness:"), strong(lab(input$logic_uniqueness))),
-      div(class="summary-stat", span("Patient Freq:"), strong(lab(input$logic_patients)))
+      div(class="summary-stat", span("Patient Freq:"), strong(lab(input$logic_patients))),
+      div(class="summary-stat", span("Healthy Excl:"), strong("Yes (Active)"))
     )
   })
   
@@ -470,7 +470,6 @@ server <- function(input, output, session) {
   # ============================================================================
   
   # --- Parquet Export Handler ---
-  # Uses DuckDB's native COPY command for high-speed export to Parquet format
   observeEvent(input$btn_save_parquet, {
     f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".parquet"), title = "Save Parquet")$res
     if (length(f) == 1 && nzchar(f)) {
@@ -479,7 +478,6 @@ server <- function(input, output, session) {
           incProgress(0.2, detail = "Generating SQL...")
           sql <- get_sql_query(); 
           incProgress(0.4, detail = "Writing to disk (DuckDB COPY)...")
-          # Use FORMAT PARQUET for compressed, column-oriented storage
           dbExecute(con, sprintf("COPY (%s) TO '%s' (FORMAT PARQUET)", sql, norm_path(f)))
           incProgress(0.4, detail = "Done.")
         })
@@ -489,41 +487,27 @@ server <- function(input, output, session) {
   })
   
   # --- FASTA Export Handler ---
-  # Saves a single FASTA file with headers formatted as OAS|pep_N
   observeEvent(input$btn_save_fasta, {
     f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".fasta"), title = "Save FASTA")$res
-    
     if (length(f) == 1 && nzchar(f)) {
       tryCatch({
         withProgress(message="Exporting FASTA", value=0, {
-          
           incProgress(0.2, detail = "Querying peptide data...")
-          # Only need unique Peptides for the FASTA file
           df <- dbGetQuery(con, get_sql_query(custom_select = "DISTINCT Peptide"))
-          
           if(nrow(df) == 0) stop("No data matches current filters.")
-          
           incProgress(0.4, detail = "Formatting sequences...")
-          # Convert to AAStringSet
           seqs <- AAStringSet(df$Peptide)
-          
-          # Assign names in format: OAS|pep_N
           names(seqs) <- paste0("OAS|pep_", seq_along(df$Peptide))
-          
           incProgress(0.3, detail = "Writing file...")
           writeXStringSet(seqs, f)
-          
           incProgress(0.1, detail = "Done.")
         })
-        
         sendSweetAlert(session, "Export Complete!", paste("FASTA saved to:", f), "success")
-        
       }, error = function(e) sendSweetAlert(session, "Failed", e$message, "error"))
     }
   })
   
   # --- Summary Report Export Handler ---
-  # Generates a text file with filter settings and data distribution stats
   observeEvent(input$btn_save_summary, {
     f <- dlg_save(default = paste0("OAS_Summary_", Sys.Date(), ".txt"), title = "Save Summary")$res
     if (length(f) == 1 && nzchar(f)) {
@@ -533,7 +517,6 @@ server <- function(input, output, session) {
           cnt <- dbGetQuery(con, get_sql_query(count_only = T))
           tot <- cnt$n_pep
           
-          # Helper to calculate percentages for categories (BSource, Isotype, etc.)
           stat <- function(col) {
             incProgress(0.1, detail = paste("Aggregating", col, "..."))
             df <- dbGetQuery(con, paste0(get_sql_query(custom_select=sprintf("%s, COUNT(DISTINCT Peptide) c", col)), sprintf(" GROUP BY %s ORDER BY c DESC", col)))
@@ -541,7 +524,7 @@ server <- function(input, output, session) {
             paste(sprintf("%s: %s (%.1f%%)", df[[col]], fmt_int(df$c), (df$c/tot)*100), collapse=", ")
           }
           
-          map_dict <- list("all"="All", "none"="None (0 AA)", "low"="Low (1-3 AA)", "high"="High (>3 AA)", "specific"="Disease-Exclusive", "shared"="Shared", "unique"="Unique", "common"="Common", "single"="Singleton", "multi"="Recurring")
+          map_dict <- list("all"="All", "low"="Low (<10%)", "medium"="Medium (10-30%)", "high"="High (>30%)", "specific"="Disease-Exclusive", "shared"="Shared", "unique"="Unique", "common"="Common", "single"="Singleton", "multi"="Recurring")
           
           incProgress(0.2, detail = "Formatting report...")
           lines <- c(
@@ -564,10 +547,11 @@ server <- function(input, output, session) {
             paste("B-Cell Source:       ", input$filter_bsource[1]),
             paste("B-Cell Type:         ", input$filter_btype[1]),
             paste("Isotype:             ", input$filter_isotype[1]),
-            paste("CDR3 Spanning:       ", map_dict[[input$logic_cdr3[1]]] %||% input$logic_cdr3[1]),
+            paste("CDR3 Coverage:       ", map_dict[[input$logic_cdr3[1]]] %||% input$logic_cdr3[1]),
             paste("Specificity:         ", map_dict[[input$logic_specificity[1]]] %||% input$logic_specificity[1]),
             paste("Peptide Uniqueness:  ", map_dict[[input$logic_uniqueness[1]]] %||% input$logic_uniqueness[1]),
             paste("Patient Frequency:   ", map_dict[[input$logic_patients[1]]] %||% input$logic_patients[1]),
+            "Healthy Exclusion:    YES (Enforced)",
             "",
             "DATA BREAKDOWN (by Peptide count):",
             "--------------------------------------------------",
