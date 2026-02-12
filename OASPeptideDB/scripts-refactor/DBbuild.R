@@ -1,3 +1,7 @@
+# Computational Settings (Adjust below numbers based on your CPU and RAM)
+N_CORES <- 6                   # Number of CPU Cores 
+DUCKDB_MEMORY_LIMIT <- "48GB"  # DuckDB memory limit (reduce if you have less than 64GB RAM)
+
 ################################################################################
 ## DBbuild.R
 ##
@@ -79,7 +83,7 @@ cat("All dependencies are satisfied.\n\n")
 # ==============================================================================
 cat("=== OAS Pipeline Setup ===\n")
 
-# 2.1 Select Data Directory
+# Select Data Directory
 # We ask the user to select the ROOT folder of their data.
 user_selected_dir <- dlg_dir(default = getwd(), 
                              title = "Select your Data Root Folder (e.g. 'unpaired')")$res
@@ -90,13 +94,6 @@ if (length(user_selected_dir) == 0) {
 
 cat("\nSelected Data Root: ", user_selected_dir, "\n")
 
-# 2.2 Computational Settings
-# Detect OS and Cores automatically
-N_CORES <- detectCores(logical = FALSE) - 1L
-if (is.na(N_CORES) || N_CORES < 1) N_CORES <- 1L
-
-# DuckDB memory limit (Adjust if you have less than 64GB RAM)
-DUCKDB_MEMORY_LIMIT <- "48GB"  
 
 # ==============================================================================
 # 3. Path Configuration (Mapped to Your Tree)
