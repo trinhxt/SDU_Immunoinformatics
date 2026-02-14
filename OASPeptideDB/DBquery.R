@@ -7,6 +7,8 @@
 # 2. Provides dynamic filtering for Diseases, B-Cell types, and Specificity logic.
 # 3. Generates live summary statistics and data previews.
 # 4. Exports filtered data to Parquet, FASTA, and Summary Text reports.
+#    * UPDATED: Exports now include I -> L amino acid conversion for mass spec compatibility.
+#    * UPDATED: Summary report now details peptide counts before/after I->L conversion.
 # ==============================================================================
 
 
@@ -404,15 +406,27 @@ server <- function(input, output, session) {
   })
   
   # --- Query Builder Function ---
-  get_sql_query <- function(count_only = FALSE, limit = NULL, custom_select = NULL) {
+  # @param count_only: If TRUE, returns aggregate counts.
+  # @param limit: Integer limit for preview rows.
+  # @param custom_select: Custom SQL string for SELECT clause.
+  # @param convert_I_to_L: If TRUE, uses SQL REPLACE to swap I->L in Peptide column.
+  get_sql_query <- function(count_only = FALSE, limit = NULL, custom_select = NULL, convert_I_to_L = FALSE) {
     req(vals$db_loaded, length(input$filter_disease) > 0, input$filter_disease[1] != "None")
     
     val <- function(x) if (length(x) > 0) x[1] else "All"
     
     # Determine columns to select
-    sel <- if (!is.null(custom_select)) custom_select 
-    else if (count_only) "COUNT(*) as n, COUNT(DISTINCT Peptide) as n_pep, COUNT(DISTINCT Patient) as n_pat, COUNT(DISTINCT Antibody) as n_ab, MIN(N_Patients) as min_p, MAX(N_Patients) as max_p" 
-    else "Peptide, Disease, Patient, Isotype, CDR3_spanning_pct, CDR3_spanning_count, N_Patients, N_Diseases, N_Antibodies, cdr3_aa, Antibody, filename"
+    if (!is.null(custom_select)) {
+      sel <- custom_select
+    } else if (count_only) {
+      sel <- "COUNT(*) as n, COUNT(DISTINCT Peptide) as n_pep, COUNT(DISTINCT Patient) as n_pat, COUNT(DISTINCT Antibody) as n_ab, MIN(N_Patients) as min_p, MAX(N_Patients) as max_p" 
+    } else {
+      # For Parquet exports, we can perform the I -> L conversion directly in SQL
+      # This avoids loading data into R memory.
+      pep_col <- if(convert_I_to_L) "REPLACE(Peptide, 'I', 'L') AS Peptide" else "Peptide"
+      
+      sel <- sprintf("%s, Disease, Patient, Isotype, CDR3_spanning_pct, CDR3_spanning_count, N_Patients, N_Diseases, N_Antibodies, cdr3_aa, Antibody, filename", pep_col)
+    }
     
     q <- sprintf("SELECT %s FROM data WHERE 1=1", sel)
     
@@ -507,14 +521,19 @@ server <- function(input, output, session) {
   # 4. DOWNLOAD HANDLERS
   # ============================================================================
   
-  # --- Parquet Export Handler ---
+  # --- Parquet Export Handler (With I -> L Conversion) ---
   observeEvent(input$btn_save_parquet, {
-    f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".parquet"), title = "Save Parquet")$res
+    # Generate filename with date and conversion tag
+    f <- dlg_save(default = paste0("OAS_", Sys.Date(), "_IsoNormalized.parquet"), title = "Save Parquet")$res
     if (length(f) == 1 && nzchar(f)) {
       tryCatch({
         withProgress(message="Exporting Parquet", value=0, {
-          incProgress(0.2, detail = "Generating SQL...")
-          sql <- get_sql_query(); 
+          incProgress(0.2, detail = "Generating SQL with I->L conversion...")
+          
+          # Setting convert_I_to_L = TRUE triggers REPLACE(Peptide, 'I', 'L') in the SQL
+          # This performs the transformation inside DuckDB (fast C++ execution)
+          sql <- get_sql_query(convert_I_to_L = TRUE); 
+          
           incProgress(0.4, detail = "Writing to disk (DuckDB COPY)...")
           dbExecute(con, sprintf("COPY (%s) TO '%s' (FORMAT PARQUET)", sql, norm_path(f)))
           incProgress(0.4, detail = "Done.")
@@ -524,37 +543,63 @@ server <- function(input, output, session) {
     }
   })
   
-  # --- FASTA Export Handler ---
+  # --- FASTA Export Handler (With I -> L and Uniqueness) ---
   observeEvent(input$btn_save_fasta, {
-    f <- dlg_save(default = paste0("OAS_", Sys.Date(), ".fasta"), title = "Save FASTA")$res
+    f <- dlg_save(default = paste0("OAS_", Sys.Date(), "_IsoNormalized.fasta"), title = "Save FASTA")$res
     if (length(f) == 1 && nzchar(f)) {
       tryCatch({
         withProgress(message="Exporting FASTA", value=0, {
-          incProgress(0.2, detail = "Querying peptide data...")
+          incProgress(0.1, detail = "Querying peptide data...")
+          # 1. Fetch distinct peptides (original)
           df <- dbGetQuery(con, get_sql_query(custom_select = "DISTINCT Peptide"))
           if(nrow(df) == 0) stop("No data matches current filters.")
-          incProgress(0.4, detail = "Formatting sequences...")
-          seqs <- AAStringSet(df$Peptide)
-          names(seqs) <- paste0("OAS|pep_", seq_along(df$Peptide))
-          incProgress(0.3, detail = "Writing file...")
+          
+          incProgress(0.3, detail = "Normalizing Isoleucine to L (High Performance)...")
+          # 2. Convert I -> L using chartr (Fastest method)
+          # chartr is ~10x faster than gsub for single char swaps
+          norm_peps <- chartr("I", "L", df$Peptide)
+          
+          incProgress(0.2, detail = "Removing duplicates...")
+          # 3. Deduplicate
+          # We deduplicate AFTER conversion because 'AIK' and 'ALK' both become 'ALK'
+          final_peps <- unique(norm_peps)
+          
+          incProgress(0.3, detail = "Formatting sequences...")
+          # 4. Create Biostrings Object
+          seqs <- AAStringSet(final_peps)
+          names(seqs) <- paste0("DAT-DB|pep_", seq_along(final_peps),"|PE=9")
+          
+          # 5. Write to disk
           writeXStringSet(seqs, f)
-          incProgress(0.1, detail = "Done.")
         })
-        sendSweetAlert(session, "Export Complete!", paste("FASTA saved to:", f), "success")
+        sendSweetAlert(session, "Export Complete!", paste("Unique FASTA (I->L) saved to:", basename(f)), "success")
       }, error = function(e) sendSweetAlert(session, "Failed", e$message, "error"))
     }
   })
   
-  # --- Summary Report Export Handler ---
+  # --- Summary Report Export Handler (Updated with I->L Stats) ---
   observeEvent(input$btn_save_summary, {
     f <- dlg_save(default = paste0("OAS_Summary_", Sys.Date(), ".txt"), title = "Save Summary")$res
     if (length(f) == 1 && nzchar(f)) {
       tryCatch({
         withProgress(message="Generating Summary Report", value=0, {
+          
+          # 1. Basic Counts
           incProgress(0.1, detail = "Counting totals...")
           cnt <- dbGetQuery(con, get_sql_query(count_only = T))
-          tot <- cnt$n_pep
           
+          # 2. Calculate I->L Conversion Stats
+          incProgress(0.2, detail = "Calculating I->L reduction...")
+          # Query distinct peptides original
+          df_pep <- dbGetQuery(con, get_sql_query(custom_select = "DISTINCT Peptide"))
+          n_orig <- nrow(df_pep)
+          
+          # Perform conversion in R to count unique result
+          n_conv <- length(unique(chartr("I", "L", df_pep$Peptide)))
+          n_reduced <- n_orig - n_conv
+          
+          # 3. Metadata Stats Function
+          tot <- cnt$n_pep
           stat <- function(col) {
             incProgress(0.1, detail = paste("Aggregating", col, "..."))
             df <- dbGetQuery(con, paste0(get_sql_query(custom_select=sprintf("%s, COUNT(DISTINCT Peptide) c", col)), sprintf(" GROUP BY %s ORDER BY c DESC", col)))
@@ -564,6 +609,7 @@ server <- function(input, output, session) {
           
           map_dict <- list("all"="All", "low"="Low (<10%)", "medium"="Medium (10-30%)", "high"="High (>30%)", "specific"="Disease-Exclusive", "shared"="Shared", "unique"="Unique", "common"="Common", "single"="Singleton", "multi"="Recurring")
           
+          # 4. Build Report
           incProgress(0.2, detail = "Formatting report...")
           lines <- c(
             "==================================================",
@@ -574,10 +620,15 @@ server <- function(input, output, session) {
             "",
             "CORE METRICS:",
             "--------------------------------------------------",
-            paste("Distinct Peptides: ", fmt_int(cnt$n_pep)),
-            paste("Unique Patients:   ", fmt_int(cnt$n_pat)),
-            paste("Unique Antibodies: ", fmt_int(cnt$n_ab)),
-            paste("Total Rows/Hits:   ", fmt_int(cnt$n)),
+            paste("Total Rows/Hits:       ", fmt_int(cnt$n)),
+            paste("Unique Patients:       ", fmt_int(cnt$n_pat)),
+            paste("Unique Antibodies:     ", fmt_int(cnt$n_ab)),
+            "",
+            "PEPTIDE DIVERSITY (I->L Normalization):",
+            "--------------------------------------------------",
+            paste("Distinct Peptides (Original): ", fmt_int(n_orig)),
+            paste("Distinct Peptides (After I->L):", fmt_int(n_conv)),
+            paste("Reduction (Isomers Merged):    ", fmt_int(n_reduced)),
             "",
             "ACTIVE FILTERS:",
             "--------------------------------------------------",
@@ -600,6 +651,7 @@ server <- function(input, output, session) {
             "=================================================="
           )
           
+          # 5. Write to disk
           incProgress(0.1, detail = "Writing to disk...")
           writeLines(lines, f)
         })
