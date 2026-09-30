@@ -17,7 +17,7 @@ Standard reference proteomes such as UniProtKB/Swiss-Prot contain fewer than 40,
 
 **OASpepDB** addresses this trade-off through a multi-tier negative subtraction and clonotype curation pipeline:
 
-1. **Repertoire Aggregation**: Ingestion of 14,433 paired and unpaired human B-cell repertoire datasets from the [Observed Antibody Space (OAS)](https://opig.stats.ox.ac.uk/webapps/oas/).
+1. **Repertoire Aggregation**: Ingestion of 14,433 unpaired human B-cell repertoire datasets from the [Observed Antibody Space (OAS)](https://opig.stats.ox.ac.uk/webapps/oas/).
 2. **Tier-1 Negative Subtraction (Healthy Repertoire Background)**: Identification and subtraction of all CDR3 sequences observed across **8,089 healthy control repertoires** to eliminate common germline and non-disease background antibodies.
 3. **Tier-2 & Tier-3 Negative Subtraction (Human Reference Proteomes)**: *In silico* tryptic digestion of UniProtKB/Swiss-Prot (canonical and isoforms) and NCBI RefSeq (GRCh38.p14) to purge any peptide fragments matching the human background proteome.
 4. **Disease-Exclusive Curation**: Retention of sequences unique to each of the 25 clinical conditions, with clonal sharing quantified across distinct patients ($N \ge 1$) and read depths.
@@ -177,14 +177,11 @@ shiny::runApp("DBquery.R", launch.browser = TRUE, port = 8080)
 
 * **Catalog and Reference Annotations**: Included directly in this repository under [`OASpepDB/Data/`](OASpepDB/Data/).
 * **Raw Repertoire Sequences**: Publicly hosted by the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/).
-* **Pre-compiled Parquet Database**: The complete partitioned database (~18 GB compressed Parquet across 25 cohorts) is archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*). Extract the archive to `D:/OAS/unpaired/CDR3_db` (or specify a custom path via `DB_ROOT` in `DBquery.R`).
+* **Pre-compiled Parquet Database**: The complete partitioned database (~18 GB compressed Parquet across 25 cohorts) is archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*). Extract the archive to `D:/OAS/unpaired/CDR3_db` (or select your custom database folder via the 'Load DB' button in `DBquery.R`).
 
 ---
 
 ## 8. Citation & Contact
 
-If you use OASpepDB in your research, please cite:
+<!-- To be updated upon publication -->
 
-> **SDU Immunoinformatics Group** (2026). *OASpepDB: A High-Throughput Disease-Exclusive Antibody CDR3 Peptidome Database for Bottom-Up Immunoproteomics*. University of Southern Denmark (SDU).
-
-For inquiries, issue reports, or data submissions, please submit an issue via GitHub or contact the maintainers.

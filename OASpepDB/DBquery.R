@@ -46,6 +46,35 @@ CRAP_REF_PATH       <- resolve_data_path("cRAP.fasta")
 UNIPROT_REF_PATH    <- resolve_data_path("Uniprot_SP_canonical_2026_09_14.fasta")
 ENTRAPMENT_REF_PATH <- resolve_data_path("entrapment_cassettes.fasta")
 
+detect_default_db_root <- function() {
+  candidates <- c(
+    "D:/OAS/unpaired/CDR3_db",
+    file.path(getwd(), "CDR3_db"),
+    file.path(APP_DIR, "CDR3_db"),
+    file.path(dirname(APP_DIR), "CDR3_db"),
+    "C:/OAS/unpaired/CDR3_db"
+  )
+  for (cand in candidates) {
+    if (dir.exists(cand)) {
+      dis_dirs <- list.dirs(cand, full.names = FALSE, recursive = FALSE)
+      if (any(grepl("^Disease=", dis_dirs))) {
+        return(normalizePath(cand, winslash = "/"))
+      }
+    }
+  }
+  return("")
+}
+
+get_db_cohort_count <- function(path) {
+  if (!nzchar(path) || !dir.exists(path)) return(0L)
+  dis_dirs <- list.dirs(path, full.names = FALSE, recursive = FALSE)
+  cohorts <- grep("^Disease=", dis_dirs, value = TRUE)
+  length(cohorts)
+}
+
+DEFAULT_DB_ROOT <- detect_default_db_root()
+DB_ROOT <- DEFAULT_DB_ROOT
+
 # Standardized Disease Dictionary (25 Cohorts)
 DISEASE_MAP <- c(
   "COVID-19"              = "Severe Acute Respiratory Syndrome Coronavirus 2 (COVID-19)",
@@ -973,7 +1002,22 @@ ui <- page_navbar(
                   "Unselect disease cohort, restore default filters, and free system memory."
                 )
               ),
-              tags$strong("Database overview", class = "text-dark small fw-semibold text-nowrap")
+              tags$strong("Database overview", class = "text-dark small fw-semibold text-nowrap"),
+              div(
+                class = "glass-tooltip-wrap ms-2",
+                actionButton(
+                  "btn_open_db_modal_header",
+                  label = tagList(icon("database", class = "me-1"), uiOutput("txt_db_status_badge", inline = TRUE)),
+                  class = "btn glass-action-btn btn-sm",
+                  style = "height: 28px !important; line-height: 26px !important; font-size: 0.74rem !important; border-radius: 8px !important; padding: 0 10px !important; display: inline-flex; align-items: center;"
+                ),
+                div(
+                  class = "glass-tooltip-box align-start",
+                  style = "width: 260px;",
+                  div(class = "glass-tooltip-title", icon("database", class = "me-1"), "Connect / Switch Database"),
+                  "Select or update the root folder of the Hive CDR3 Parquet database."
+                )
+              )
             ),
             div(
               class = "d-flex align-items-center justify-content-center mx-auto",
@@ -1025,6 +1069,21 @@ ui <- page_navbar(
             ),
             div(
               class = "d-flex align-items-center gap-2",
+              div(
+                class = "glass-tooltip-wrap",
+                actionButton(
+                  "btn_open_db_modal_reverse",
+                  label = tagList(icon("database", class = "me-1"), uiOutput("txt_db_status_badge_rev", inline = TRUE)),
+                  class = "btn glass-action-btn btn-sm",
+                  style = "height: 28px !important; line-height: 26px !important; font-size: 0.74rem !important; border-radius: 8px !important; padding: 0 10px !important; display: inline-flex; align-items: center;"
+                ),
+                div(
+                  class = "glass-tooltip-box align-end",
+                  style = "width: 260px;",
+                  div(class = "glass-tooltip-title", icon("database", class = "me-1"), "Connect / Switch Database"),
+                  "Select or update the root folder of the Hive CDR3 Parquet database."
+                )
+              ),
               div(
                 class = "glass-tooltip-wrap",
                 span(
@@ -1168,7 +1227,151 @@ server <- function(input, output, session) {
   # Interactive State & Observers for Unified Alluvial Canvas
   # ----------------------------------------------------------------------------
   selected_intro_disease <- reactiveVal("")
-  export_target_folder   <- reactiveVal("D:/OAS/Fasta-export")
+  default_export_dir <- if (dir.exists("D:/OAS/Fasta-export")) "D:/OAS/Fasta-export" else normalizePath(file.path(getwd(), "Exports"), winslash = "/", mustWork = FALSE)
+  export_target_folder   <- reactiveVal(default_export_dir)
+  db_root                <- reactiveVal(DEFAULT_DB_ROOT)
+
+  # Render Database Status Badges
+  render_db_status_content <- function() {
+    path <- db_root()
+    is_valid <- nzchar(path) && dir.exists(path)
+    n_cohorts <- if (is_valid) get_db_cohort_count(path) else 0L
+    if (is_valid && n_cohorts > 0) {
+      tagList(
+        tags$span(class = "badge bg-success-subtle text-success border border-success-subtle me-1", style = "font-size: 0.65rem; padding: 2px 5px;", sprintf("%d Cohorts", n_cohorts)),
+        tags$span(class = "text-dark", "DB Loaded")
+      )
+    } else {
+      tagList(
+        tags$span(class = "badge bg-warning text-dark me-1", style = "font-size: 0.65rem; padding: 2px 5px;", "Not Loaded"),
+        tags$span(class = "text-warning fw-semibold", "Load DB")
+      )
+    }
+  }
+
+  output$txt_db_status_badge     <- renderUI({ render_db_status_content() })
+  output$txt_db_status_badge_rev <- renderUI({ render_db_status_content() })
+
+  # Database Connection Modal Dialog
+  open_db_modal <- function(err_msg = NULL) {
+    cur_path <- isolate(db_root())
+    if (!nzchar(cur_path)) {
+      cur_path <- detect_default_db_root()
+    }
+    if (!nzchar(cur_path)) cur_path <- "D:/OAS/unpaired/CDR3_db"
+
+    showModal(modalDialog(
+      title = div(
+        class = "d-flex align-items-center gap-2",
+        icon("database", class = "text-primary"),
+        tags$span("Load CDR3 Database (Hive Parquet)", class = "fw-bold", style = "font-size: 1.05rem;")
+      ),
+      size = "m",
+      easyClose = TRUE,
+      fade = TRUE,
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton(
+          "btn_confirm_load_db",
+          "Connect Database",
+          icon = icon("plug"),
+          class = "btn btn-primary fw-semibold",
+          style = "background: #0071e3; border: none; border-radius: 8px; padding: 6px 18px;"
+        )
+      ),
+      div(
+        class = "p-1",
+        tags$p(
+          class = "text-muted small mb-3",
+          "Select or enter the root directory containing the Hive-partitioned Parquet database (e.g. subfolders named ",
+          tags$code("Disease=COVID-19"), ", ", tags$code("Disease=HIV"), ")."
+        ),
+        if (!is.null(err_msg) && nzchar(err_msg)) {
+          div(
+            class = "alert alert-danger py-2 px-3 small d-flex align-items-center gap-2 mb-3",
+            icon("triangle-exclamation", class = "flex-shrink-0 text-danger"),
+            tags$span(err_msg)
+          )
+        },
+        tags$label(class = "form-label fw-bold small mb-1", "Database Directory:"),
+        div(
+          class = "d-flex gap-2 align-items-center mb-2",
+          div(
+            style = "flex-grow: 1;",
+            textInput("txt_db_path_input", label = NULL, value = cur_path, width = "100%", placeholder = "e.g. D:/OAS/unpaired/CDR3_db")
+          ),
+          actionButton(
+            "btn_browse_db_folder",
+            "Browse...",
+            icon = icon("folder-open"),
+            class = "btn btn-outline-secondary",
+            style = "height: 38px; padding: 0 14px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;"
+          )
+        ),
+        div(
+          class = "text-muted",
+          style = "font-size: 0.76rem;",
+          icon("circle-info", class = "me-1"),
+          "Click 'Browse...' to select a folder on Windows, or paste/type any local or network directory path."
+        )
+      )
+    ))
+  }
+
+  observeEvent(input$btn_open_db_modal_header, {
+    open_db_modal()
+  })
+
+  observeEvent(input$btn_open_db_modal_reverse, {
+    open_db_modal()
+  })
+
+  observeEvent(input$btn_browse_db_folder, {
+    init_dir <- isolate(input$txt_db_path_input)
+    if (is.null(init_dir) || !dir.exists(init_dir)) init_dir <- isolate(db_root())
+    if (is.null(init_dir) || !dir.exists(init_dir)) init_dir <- getwd()
+    
+    new_dir <- tryCatch({
+      if (exists("choose.dir", where = asNamespace("utils"))) {
+        utils::choose.dir(default = init_dir, caption = "Select CDR3_db Hive Database Directory")
+      } else {
+        NA
+      }
+    }, error = function(e) NA)
+    
+    if (!is.na(new_dir) && nzchar(new_dir)) {
+      new_dir <- gsub("\\\\", "/", new_dir)
+      updateTextInput(session, "txt_db_path_input", value = new_dir)
+    }
+  })
+
+  observeEvent(input$btn_confirm_load_db, {
+    target_dir <- trimws(input$txt_db_path_input)
+    if (is.null(target_dir) || !nzchar(target_dir)) {
+      open_db_modal("Please enter or select a directory path.")
+      return()
+    }
+    target_dir <- gsub("\\\\", "/", target_dir)
+    if (!dir.exists(target_dir)) {
+      open_db_modal(sprintf("Directory does not exist: %s", target_dir))
+      return()
+    }
+    
+    dis_dirs <- list.dirs(target_dir, full.names = FALSE, recursive = FALSE)
+    cohorts <- grep("^Disease=", dis_dirs, value = TRUE)
+    if (length(cohorts) == 0) {
+      open_db_modal(sprintf("Directory exists but does not contain Hive partitions (e.g. 'Disease=COVID-19'): %s", target_dir))
+      return()
+    }
+    
+    db_root(target_dir)
+    removeModal()
+    showNotification(
+      sprintf("Database loaded successfully! Connected to %d disease cohorts in %s.", length(cohorts), basename(target_dir)),
+      type = "message",
+      duration = 4
+    )
+  })
   
   observeEvent(input$btn_cohort_click, {
     req(input$btn_cohort_click)
@@ -1201,6 +1404,13 @@ server <- function(input, output, session) {
     dis <- selected_intro_disease()
     if (!nzchar(dis)) return(NULL)
     
+    cur_db <- db_root()
+    if (!nzchar(cur_db) || !dir.exists(cur_db)) {
+      showNotification("Please load the CDR3 database directory first.", type = "warning", duration = 4)
+      open_db_modal()
+      return(NULL)
+    }
+    
     min_p <- as.numeric(input$intro_min_patients)
     if (is.null(min_p) || is.na(min_p)) min_p <- 1
     
@@ -1212,7 +1422,7 @@ server <- function(input, output, session) {
       FROM read_parquet('%s/Disease=%s/**/*.parquet', hive_partitioning=true)
       WHERE N_Patients >= %d AND Redundancy >= %d
       GROUP BY BSource, BType, Isotype
-    ", DB_ROOT, dis, min_p, min_r)
+    ", cur_db, dis, min_p, min_r)
     
     df <- tryCatch({
       dbGetQuery(con, sql)
@@ -1572,11 +1782,18 @@ server <- function(input, output, session) {
       return()
     }
     
+    cur_db <- db_root()
+    if (!nzchar(cur_db) || !dir.exists(cur_db)) {
+      showNotification("Please load the CDR3 database directory first.", type = "warning", duration = 4)
+      open_db_modal()
+      return()
+    }
+    
     # Query partition directory names via DuckDB Hive metadata (takes ~15ms)
     meta_sql <- sprintf("
       SELECT DISTINCT BSource, BType, Isotype 
       FROM read_parquet('%s/Disease=%s/**/*.parquet', hive_partitioning=true);
-    ", DB_ROOT, disease)
+    ", cur_db, disease)
     
     part_meta <- tryCatch({
       dbGetQuery(con, meta_sql)
@@ -1611,7 +1828,7 @@ server <- function(input, output, session) {
     iso   <- if (input$sel_isotype != "ALL") paste0("Isotype=", input$sel_isotype, "/") else ""
     
     # Path globbing
-    path_pattern <- sprintf("%s/Disease=%s/%s%s%s*.parquet", DB_ROOT, disease, b_src, b_typ, iso)
+    path_pattern <- sprintf("%s/Disease=%s/%s%s%s*.parquet", db_root(), disease, b_src, b_typ, iso)
     
     # Where clauses for non-partitioned metrics
     clauses <- c(
@@ -1833,7 +2050,7 @@ server <- function(input, output, session) {
     if (is.null(min_r) || is.na(min_r)) min_r <- 1
     
     out_file <- normalizePath(file, winslash = "/", mustWork = FALSE)
-    path_pattern <- sprintf("%s/Disease=%s/**/*.parquet", DB_ROOT, disease)
+    path_pattern <- sprintf("%s/Disease=%s/**/*.parquet", db_root(), disease)
     where_clause <- sprintf("Disease = '%s' AND N_Patients >= %d AND Redundancy >= %d", disease, min_p, min_r)
     
     sql <- sprintf("
@@ -1918,7 +2135,7 @@ server <- function(input, output, session) {
     if (is.null(min_r) || is.na(min_r)) min_r <- 1
     
     out_file <- normalizePath(file, winslash = "/", mustWork = FALSE)
-    path_pattern <- sprintf("%s/Disease=%s/**/*.parquet", DB_ROOT, disease)
+    path_pattern <- sprintf("%s/Disease=%s/**/*.parquet", db_root(), disease)
     where_clause <- sprintf("Disease = '%s' AND N_Patients >= %d AND Redundancy >= %d", disease, min_p, min_r)
     
     sql <- sprintf("
@@ -1950,7 +2167,7 @@ server <- function(input, output, session) {
     if (is.null(min_r)) min_r <- as.numeric(input$intro_min_redundancy)
     if (is.null(min_r) || is.na(min_r)) min_r <- 1
     
-    path_pattern <- sprintf("%s/Disease=%s/**/*.parquet", DB_ROOT, disease)
+    path_pattern <- sprintf("%s/Disease=%s/**/*.parquet", db_root(), disease)
     where_clause <- sprintf("Disease = '%s' AND N_Patients >= %d AND Redundancy >= %d", disease, min_p, min_r)
     
     metric_sql <- sprintf("
@@ -2301,6 +2518,13 @@ server <- function(input, output, session) {
     
     if (length(peptides) == 0) return()
     
+    cur_db <- db_root()
+    if (!nzchar(cur_db) || !dir.exists(cur_db)) {
+      showNotification("Please load the CDR3 database directory first.", type = "warning", duration = 4)
+      open_db_modal()
+      return()
+    }
+    
     withProgress(message = "Searching database for identified peptide fragment(s)...", value = 0.5, {
       # Exact match with tryptic peptide fragment in semicolon-separated list
       conds <- sprintf("list_contains(string_split(tryptic_peptides, ';'), '%s')", peptides)
@@ -2324,7 +2548,7 @@ server <- function(input, output, session) {
         WHERE %s
         ORDER BY N_Patients DESC, Redundancy DESC
         LIMIT 500;
-      ", DB_ROOT, where_clause)
+      ", cur_db, where_clause)
       
       res <- tryCatch({
         dbGetQuery(con, lookup_sql)
