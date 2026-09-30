@@ -1,0 +1,61 @@
+name: CI Code Quality & Syntax Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  python-validation:
+    name: Python Scripts Syntax & CLI Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install psutil pyarrow pandas
+
+      - name: Compile Python Scripts (Syntax Check)
+        run: |
+          python -m py_compile OASpepDB/Scripts/01_download_OAS.py
+          python -m py_compile OASpepDB/Scripts/02_build_healthy_cdr3_cache.py
+          python -m py_compile OASpepDB/Scripts/04_build_disease_db.py
+          python -m py_compile OASpepDB/Scripts/05_fetch_ncbi_entrapment.py
+          python -m py_compile OASpepDB/Scripts/download_reference_proteomes.py
+
+      - name: Validate CLI Argument Parsing
+        run: |
+          python OASpepDB/Scripts/01_download_OAS.py --help
+          python OASpepDB/Scripts/02_build_healthy_cdr3_cache.py --help
+          python OASpepDB/Scripts/04_build_disease_db.py --help
+          python OASpepDB/Scripts/05_fetch_ncbi_entrapment.py --help
+          python OASpepDB/Scripts/download_reference_proteomes.py --help
+
+  r-syntax-validation:
+    name: R Code Syntax & Parser Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+
+      - name: Parse R Scripts
+        run: |
+          Rscript -e "parse('OASpepDB/DBquery.R'); cat('Parsed DBquery.R successfully!\n')"
+          Rscript -e "parse('OASpepDB/Scripts/03_insilico_digest.R'); cat('Parsed 03_insilico_digest.R successfully!\n')"
+          Rscript -e "parse('OASpepDB/Scripts/generate_unified_alluvial_svg.R'); cat('Parsed generate_unified_alluvial_svg.R successfully!\n')"

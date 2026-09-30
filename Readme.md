@@ -29,6 +29,9 @@ Standard reference proteomes such as UniProtKB/Swiss-Prot contain fewer than 40,
 
 ```text
 SDU_Immunoinformatics/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                          # Continuous integration (syntax & CLI validation)
 ├── OASpepDB/                               # Core application and data assets
 │   ├── DBquery.R                           # Interactive Shiny web application (DuckDB OLAP)
 │   ├── DBquery-Windows.bat                 # Launch script for Windows
@@ -38,13 +41,16 @@ SDU_Immunoinformatics/
 │   │   ├── OAS_metadata.csv                # Curated metadata catalog (14,433 studies)
 │   │   ├── cRAP.fasta                      # Common Repository of Adventitious Proteins
 │   │   ├── entrapment_cassettes.fasta      # Camelid VHH entrapment sequences for empirical FDR
-│   │   └── bulk_download_human_unpaired.sh # Bulk download script for OAS repertoires
+│   │   ├── bulk_download_human_unpaired.sh # Bulk download script for OAS repertoires
+│   │   ├── download_reference_proteomes.sh # Bash wrapper for human reference proteomes
+│   │   └── download_reference_proteomes.bat# Windows wrapper for human reference proteomes
 │   └── Scripts/
 │       ├── 01_download_OAS.py              # Step 01: Parallel download of OAS repertoires
 │       ├── 02_build_healthy_cdr3_cache.py  # Step 02: Multi-threaded healthy CDR3 indexer
 │       ├── 03_insilico_digest.R            # Step 03: Human proteome in silico digestion
 │       ├── 04_build_disease_db.py          # Step 04: Disease-exclusive database builder
 │       ├── 05_fetch_ncbi_entrapment.py     # Step 05: Camelid VHH entrapment library generator
+│       ├── download_reference_proteomes.py # Automated fetch for UniProt & RefSeq proteomes
 │       └── generate_unified_alluvial_svg.R # Dynamic alluvial diagram generator
 ├── Archived/                               # Prior versions, deprecated files, and notes
 ├── .gitignore                              # Git exclusion rules for large data artifacts
@@ -86,11 +92,15 @@ python OASpepDB/Scripts/02_build_healthy_cdr3_cache.py \
 ```
 
 ### Step 3: Digest Human Reference Proteomes (Tier-2 & Tier-3 Subtraction)
-Generates an *in silico* tryptic peptidome (Trypsin/P cleavage, 0–2 missed cleavages, peptide length 6–45 aa) from UniProtKB/Swiss-Prot and NCBI RefSeq:
+Download canonical UniProtKB/Swiss-Prot and NCBI RefSeq human reference proteomes, then perform *in silico* tryptic digestion (Trypsin/P cleavage, 0–2 missed cleavages, peptide length 6–45 aa):
 ```bash
+# Automated streaming download of UniProt and NCBI RefSeq reference proteomes
+python OASpepDB/Scripts/download_reference_proteomes.py
+
+# In silico tryptic digestion and negative index construction
 Rscript OASpepDB/Scripts/03_insilico_digest.R
 ```
-*Output: `OASpepDB/Data/negative_human_reference_peptides.parquet`.*
+*Outputs: `OASpepDB/Data/negative_human_reference_peptides.parquet` and `OASpepDB/Data/negative_reference.duckdb`.*
 
 ### Step 4: Construct Disease-Exclusive Hive Database
 Filters disease-exclusive sequences, quantifies patient sharing ($N$ patients) and read coverage, and partitions data by clinical cohort:
@@ -114,9 +124,10 @@ CDR3_db/
 ```
 
 ### Step 5: Generate Camelid VHH Entrapment Library (Empirical FDR)
-Queries NCBI Entrez E-utilities for published Camelid VHH sequences, producing isobaric ($I \rightarrow L$) micro-cassettes for target-decoy calibration:
+Queries NCBI Entrez E-utilities for published Camelid VHH sequences, producing isobaric ($I \rightarrow L$) micro-cassettes for target-decoy empirical FDR calibration:
 ```bash
-python OASpepDB/Scripts/05_fetch_ncbi_entrapment.py
+# Extract authentic Camelid VHH cassettes (default: 2,000; scale up with --target-count)
+python OASpepDB/Scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 ```
 *Output: `OASpepDB/Data/entrapment_cassettes.fasta`.*
 
