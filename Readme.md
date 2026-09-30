@@ -1,49 +1,191 @@
-# Data mining antibody sequences for database searching in bottom-up proteomics
+# OASpepDB: Human Disease CDR3 Antibody Peptides Database
 
-## 0. Introduction
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![R: >= 4.2](https://img.shields.io/badge/R-%3E%3D%204.2-276DC3.svg)](https://www.r-project.org/)
+[![Python: >= 3.9](https://img.shields.io/badge/Python-%3E%3D%203.9-3776AB.svg)](https://www.python.org/)
+[![Database: DuckDB & Parquet](https://img.shields.io/badge/Database-DuckDB%20%7C%20Parquet-FFF000.svg)](https://duckdb.org/)
 
-Human antibodies, vital components of the immune system, are protein molecules composed of two heavy and two light polypeptide chains, interconnected by disulfide bonds. These antibodies play a critical role in immune defense by recognizing and neutralizing pathogens. Identifying disease-specific antibodies is essential for diagnosing infectious diseases, evaluating vaccine effectiveness, and determining an individual's immune status. However, the human body can produce billions of unique antibodies, making their identification in complex biological samples, such as blood plasma, a considerable challenge.
+A curated repository of **65,510,795** non-redundant, **disease-exclusive antibody CDR3 peptides** across **25 human disease cohorts**, optimized for bottom-up immunoproteomics and liquid chromatography–tandem mass spectrometry (LC-MS/MS) database searching.
 
-Mass spectrometry (MS)-based proteomics is a powerful method for identifying and quantifying antibodies. Among the various MS approaches, bottom-up proteomics is especially effective for analyzing thousands of antibodies in complex mixtures. In this method, proteins are enzymatically digested into smaller peptides, typically using the protease trypsin, which are then analyzed via mass spectrometry. These peptides are matched to sequences in standard databases like UniProt or NCBI-RefSeq for identification.
+---
 
-However, a major limitation of this approach is the absence of comprehensive disease-specific antibody databases. Current databases, such as UniProt, include only a fraction of the antibody sequences present in the human body. For instance, as of January 2024, UniProt contains just 38,800 immunoglobulin sequences, far short of the billions of antibodies the human immune system can produce. As a result, relying on such limited databases can lead to under-detection of antibodies, particularly those associated with specific diseases. Expanding antibody databases with disease-specific sequences is crucial for improving the accuracy of MS-based proteomics in identifying antibodies relevant to human health.
+## 1. Scientific Overview & Rationale
 
-Recently, through next-generation sequencing of antibody gene repertoires, it has become possible to obtain billions of antibody sequences (in amino acid format) by annotating, translating, and numbering antibody gene sequences. These large numbers of sequences are now available in public databases such as the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/). We hypothesize that using these theoretical antibody sequences as new databases for bottom-up proteomics could address the current lack of antibody coverage in standard databases.
+Direct identification of circulating, disease-specific antibodies from patient biofluids (e.g., plasma, serum, cerebrospinal fluid) via bottom-up mass spectrometry requires sequence databases that capture hypervariable complementarity-determining regions (specifically CDR-H3). 
 
-The workflow below is for creating disease-specific antibody tryptic peptide databases to use in bottom-up proteomics. The workflow contains five steps: **Download**, **Digest**, **Filter**, **Prepare DB** and **Use results for web app**. For the first four steps, four R script files were prepared and used for each step, those files are available in `Databases-preparation` directory (`Part1_Download.R`, `Part2_Digestion.R`, `Part3_Filter.R`, `Part4_DB_prep.R`).
+Standard reference proteomes such as UniProtKB/Swiss-Prot contain fewer than 40,000 immunoglobulin entries, omitting somatic hypermutations and V(D)J combinatorial diversity. Conversely, searching raw next-generation sequencing repertoires (>2 billion reads) causes severe database expansion, prolonged search times, and uncalibrated false discovery rates.
 
-Before starting the workflow, we need to install necessary R packages by running the codes in the file `Part0_Install_Packages.R` in the `Databases-preparation` directory.
+**OASpepDB** addresses this trade-off through a multi-tier negative subtraction and clonotype curation pipeline:
 
-![Workflow to create databases](Databases-preparation/Workflow.png)
+1. **Repertoire Aggregation**: Ingestion of 14,433 paired and unpaired human B-cell repertoire datasets from the [Observed Antibody Space (OAS)](https://opig.stats.ox.ac.uk/webapps/oas/).
+2. **Tier-1 Negative Subtraction (Healthy Repertoire Background)**: Identification and subtraction of all CDR3 sequences observed across **8,089 healthy control repertoires** to eliminate common germline and non-disease background antibodies.
+3. **Tier-2 & Tier-3 Negative Subtraction (Human Reference Proteomes)**: *In silico* tryptic digestion of UniProtKB/Swiss-Prot (canonical and isoforms) and NCBI RefSeq (GRCh38.p14) to purge any peptide fragments matching the human background proteome.
+4. **Disease-Exclusive Curation**: Retention of sequences unique to each of the 25 clinical conditions, with clonal sharing quantified across distinct patients ($N \ge 1$) and read depths.
+5. **Empirical FDR Control**: Integration of a calibrated ~1% non-human Camelid VHH entrapment library (NCBI GenBank) formatted with isobaric $I \rightarrow L$ substitution for target-decoy mass spectrometry validation.
 
-## 1. Download antibody sequence data
+---
 
-Firstly, human antibody sequences are downloaded from [Observed Antibody Space webpage](https://opig.stats.ox.ac.uk/webapps/oas/). Go to the website, choose **Unpaired Sequences**. In the box **Search OAS sequences by attribute**, choose Species: **human**, Chain: **heavy**, and click **Search**. Heavy chain is capable of generating much more junctional and combinatorial diversity than the light chain and is the major contributor to antigen binding [(Tizard 2023)](http://dx.doi.org/10.1016/B978-0-323-95219-4.00013-7). Therefore, heavy chains in unpaired sequences were focused. The search will yield **1,891,061,809** unique sequences from **69** studies as of September 2024. A shell-script with the commands to download all the antibody data files in this search will be available for download, this file is `bulk_download.sh`.
+## 2. Repository Structure
 
-Next, after getting the `bulk_download.sh` file, we open the `Part1_Download.R` file and run R codes in it. This file will use links in `bulk_download.sh` file to download antibody data and their metadata. After finish running codes in this file, a metadata file named `OAS_metadata.csv` and a directory `OAS_full` containing 13,265 `csv.gz` files of antibody will be obtained. Each file in `OAS_full` directory is a data table with columns: `sequence_alignment_aa`, `v_call`, `d_call`, `j_call`, `cdr1_aa`, `cdr2_aa`, `cdr3_aa`, where `sequence_alignment_aa` is antibody sequence in amino acid format, `v_call`, `d_call`, `j_call` are V call, D call and J call of antibody, `cdr1_aa`, `cdr2_aa`, `cdr3_aa` are peptide sequences in amino acid format of CD1, 2, 3 regions of the antibody.
+```text
+SDU_Immunoinformatics/
+├── OASpepDB/                               # Core application and data assets
+│   ├── DBquery.R                           # Interactive Shiny web application (DuckDB OLAP)
+│   ├── DBquery-Windows.bat                 # Launch script for Windows
+│   ├── DBquery-Mac.command                 # Launch script for macOS
+│   ├── DBquery-Linux.sh                    # Launch script for Linux
+│   ├── Data/
+│   │   ├── OAS_metadata.csv                # Curated metadata catalog (14,433 studies)
+│   │   ├── cRAP.fasta                      # Common Repository of Adventitious Proteins
+│   │   ├── entrapment_cassettes.fasta      # Camelid VHH entrapment sequences for empirical FDR
+│   │   └── bulk_download_human_unpaired.sh # Bulk download script for OAS repertoires
+│   └── Scripts/
+│       ├── 01_download_OAS.py              # Step 01: Parallel download of OAS repertoires
+│       ├── 02_build_healthy_cdr3_cache.py  # Step 02: Multi-threaded healthy CDR3 indexer
+│       ├── 03_insilico_digest.R            # Step 03: Human proteome in silico digestion
+│       ├── 04_build_disease_db.py          # Step 04: Disease-exclusive database builder
+│       ├── 05_fetch_ncbi_entrapment.py     # Step 05: Camelid VHH entrapment library generator
+│       ├── extract_paired_metadata.py      # Paired repertoire metadata utility
+│       └── generate_unified_alluvial_svg.R # Dynamic alluvial diagram generator
+├── Archived/                               # Prior versions, deprecated files, and notes
+├── .gitignore                              # Git exclusion rules for large data artifacts
+├── LICENSE                                 # MIT License
+└── Readme.md                               # Project documentation
+```
 
-For downloading 1.89 billion antibody sequences, this process will take about 5h using a computer with CPU of Intel Xeon Gold 6130 and RAM of 48 GB.
+---
 
-## 2. Digest antibody sequences data
+## 3. Database Generation Pipeline
 
-After part 1, OAS_full directory and OAS_metadata.csv file are obtained. We will used the `Part2_Digestion.R` to digest the antibody sequences in OAS_full directory along with human protein sequences from standard databases ([UniProt](https://www.uniprot.org/) and [NCBI-RefSeq](https://ftp.ncbi.nlm.nih.gov/refseq/H_sapiens/mRNA_Prot/)). Here, we have UniProt and NCBI-RefSeq obtained from July 2024 (files: `UniProt_TR_SP_Human_2024_07_25.fasta` and `NCBI_RefSeq_Human_2024_07_25.fasta` in `Databases-preparation` directory).
+To reproduce the database construction from raw repertoire data, execute the pipeline scripts sequentially:
 
-The digestion was done by using package cleaver from Bioconductor, with settings: `enzym="trypsin", missedCleavages=0:1`. This will collect tryptic peptides with missed cleavages of 0 and 1. After digestion of both antibody and protein sequences, we keep only antibody tryptic peptides that are not ovelapping with tryptic peptides from UniProt and NCBI-RefSeq.
+### Prerequisites
 
-Output of this part 2 is tryptic peptides of non-disease and disease samples storing in three directories. Directory `OAS_Tryptic/None` contains tryptic peptides of non-disease samples. Directory `OAS_Tryptic/Disease_index_ab` contains tryptic peptides of disease samples with two columns: Sequence and Antibody, where Sequence is tryptic peptide and Antibody is the antibody containing that peptide. Directory `OAS_Tryptic/Disease_index_filename` contains tryptic peptides of disease samples with two columns: Sequence and Filename, where Sequence is tryptic peptide and Filename is the file name of the data. This Filename will be map to metadata (OAS_metadata.csv) to get information of: B-cell source, B-cell-type, antibody isotype, patient, disease.
+```bash
+# Python dependencies
+pip install pyarrow duckdb pandas biopython psutil requests
 
-For digestion of 1.89 billion antibody sequences, this process will take about 7 days using a computer with CPU of Intel Xeon Gold 6130 and RAM of 384 GB.
+# R dependencies
+R -e "install.packages(c('shiny', 'bslib', 'DT', 'duckdb', 'DBI', 'arrow', 'dplyr', 'htmltools', 'zip'))"
+R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('Biostrings')"
+```
 
-## 3. Filter tryptic peptide data
+### Step 1: Download Raw Repertoire Data from OAS
+Run the automated downloader using the metadata catalog:
+```bash
+python OASpepDB/Scripts/01_download_OAS.py --metadata OASpepDB/Data/OAS_metadata.csv --out-dir /path/to/OAS_raw
+```
 
-In this part, we will use `Part3_Filter.R` to filter tryptic peptides of one disease by removing the peptides overlapping with the peptides in non-disease samples and the peptides in other disease samples in order to obtain **disease-specific antibody tryptic peptides**. The filtered tryptic peptides of all 24 diseases are resulted in directory `OAS_Tryptic/Disease_index_ab`.
+### Step 2: Index Healthy Control CDR3 Cache (Tier-1 Subtraction)
+Extracts and indexes CDR3 sequences from 8,089 healthy repertoires (`Disease == 'None'`) into a compressed Parquet cache:
+```bash
+python OASpepDB/Scripts/02_build_healthy_cdr3_cache.py \
+    --metadata OASpepDB/Data/OAS_metadata.csv \
+    --data-dir /path/to/OAS_raw \
+    --out-parquet /path/to/CDR3_db/healthy_cdr3_cache.parquet \
+    --workers 16
+```
 
-For filtering the data in this workflow, this process will take about 48h using a computer with CPU of Intel Xeon Gold 6130 and RAM of 192 GB.
+### Step 3: Digest Human Reference Proteomes (Tier-2 & Tier-3 Subtraction)
+Generates an *in silico* tryptic peptidome (Trypsin/P cleavage, 0–2 missed cleavages, peptide length 6–45 aa) from UniProtKB/Swiss-Prot and NCBI RefSeq:
+```bash
+Rscript OASpepDB/Scripts/03_insilico_digest.R
+```
+*Output: `OASpepDB/Data/negative_human_reference_peptides.parquet`.*
 
-## 4. Create databases
+### Step 4: Construct Disease-Exclusive Hive Database
+Filters disease-exclusive sequences, quantifies patient sharing ($N$ patients) and read coverage, and partitions data by clinical cohort:
+```bash
+python OASpepDB/Scripts/04_build_disease_db.py \
+    --metadata OASpepDB/Data/OAS_metadata.csv \
+    --data-dir /path/to/OAS_raw \
+    --healthy-cache /path/to/CDR3_db/healthy_cdr3_cache.parquet \
+    --negative-ref OASpepDB/Data/negative_human_reference_peptides.parquet \
+    --out-dir /path/to/CDR3_db \
+    --workers 8
+```
+*Output directory structure (Hive-partitioned):*
+```text
+CDR3_db/
+├── Disease=COVID-19/
+│   └── BSource=PBMC/
+│       └── BType=Memory-B-Cells/
+│           └── Isotype=IGHG1/*.parquet
+└── Disease=HIV/...
+```
 
-After obtaining **disease-specific antibody tryptic peptides**, we will use `Part4_DB_prep.R` to create database files for later querying based on metadata such as: B-cell source, B-cell-type, antibody isotype, patient, disease. We will use DuckDB database format instead of SQL database format because DuckDB is much faster and more storage-optimized than SQL. After running the R codes, the database files (`.duckdb` extension) will be stored in directory `OAS_pepDB/DuckDB`. We made those database available at [Zenodo](https://doi.org/10.5281/zenodo.10561456).
+### Step 5: Generate Camelid VHH Entrapment Library (Empirical FDR)
+Queries NCBI Entrez E-utilities for published Camelid VHH sequences, producing isobaric ($I \rightarrow L$) micro-cassettes for target-decoy calibration:
+```bash
+python OASpepDB/Scripts/05_fetch_ncbi_entrapment.py
+```
+*Output: `OASpepDB/Data/entrapment_cassettes.fasta`.*
 
-## 5. Web application
+---
 
-Using those database files above, we made DAT-DB - a web application for researchers to get FASTA files of disease-specific antibody peptides for direct use in bottom-up proteomics. A demo version of the app is available at this [DAT-DB link](https://trinhxt.shinyapps.io/DAT-DB/).
+## 4. Running the Interactive Explorer
+
+The repository includes a standalone R Shiny application utilizing an in-memory DuckDB engine for rapid querying and multi-format data export.
+
+### 1-Click Launchers:
+* **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`
+* **macOS**: Double-click `OASpepDB/DBquery-Mac.command`
+* **Linux**: Run `bash OASpepDB/DBquery-Linux.sh`
+
+### Command Line / R Console:
+```r
+# From the repository root
+shiny::runApp("OASpepDB", launch.browser = TRUE, port = 8080)
+
+# Or within the OASpepDB directory
+setwd("OASpepDB")
+shiny::runApp("DBquery.R", launch.browser = TRUE, port = 8080)
+```
+
+---
+
+## 5. Web Application Features
+
+1. **Query & Export (Cohort Stratification Dashboard)**:
+   - **Clinical Hierarchy Visualization**: Interactive alluvial diagram illustrating sequence distribution across 4 clinical domains, 25 disease cohorts, tissue sources, B-cell subsets, and heavy-chain isotypes.
+   - **Clonal Stringency Thresholds**:
+     - *Min Patients ($N \ge 1, 2, 3, 5$)*: Restricts results to convergent, multi-patient clonotypes.
+     - *Min Reads ($\ge 1, 5, 10, 50$)*: Filters low-abundance sequences to ensure robust sequencing evidence.
+   - **Export Formats**:
+     - `OAS_<Disease>_<Date>.fasta`: Search-ready database containing disease-exclusive CDR3 micro-cassettes, common laboratory contaminants (cRAP), and ~1% Camelid VHH entrapment controls ($I \rightarrow L$ converted).
+     - `OAS_<Disease>_<Date>.parquet`: Tabular dataset containing clonotype identifiers, patient counts, read metrics, full amino acid sequences, and source accessions.
+     - `OAS_<Disease>_<Date>.txt`: Audit manifest documenting applied filters and query metadata.
+
+2. **Reverse Lookup (Peptide-to-Clonotype Mapping)**:
+   - Queries identified experimental tryptic peptides against the complete 65.5-million sequence database via vectorized DuckDB SQL.
+   - Returns matching clonotypes, disease specificity, isotype classifications, complete CDR3 cassettes, and source study records.
+
+---
+
+## 6. Cohort Distribution Summary
+
+| Clinical Category | Diseases / Cohorts Included | Non-Redundant CDR3 Peptides |
+| :--- | :--- | :--- |
+| **Infectious Diseases** | COVID-19, HIV, CMV-EBV, Influenza, Sepsis, RSV, West Nile, Dengue, Ebola, Hepatitis B, Cholera, Rotavirus, Enterovirus, Lyme, S. pneumoniae, C. difficile | **39,400,000+** |
+| **Allergy & Airways** | Allergy-SIT, Allergy-NoSIT, Asthma | **8,900,000+** |
+| **Autoimmune & Neuro** | SLE (Lupus), Multiple Sclerosis, Rheumatoid Arthritis, Myasthenia Gravis | **13,300,000+** |
+| **Hematology & Tumors** | CLL (Chronic Lymphocytic Leukemia), Melanoma | **3,900,000+** |
+| **Total Database** | **25 Disease Cohorts** | **65,510,795** |
+
+---
+
+## 7. Data Availability
+
+* **Catalog and Reference Annotations**: Included directly in this repository under [`OASpepDB/Data/`](OASpepDB/Data/).
+* **Raw Repertoire Sequences**: Publicly hosted by the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/).
+* **Pre-compiled Parquet Database**: The complete partitioned database (~18 GB compressed Parquet across 25 cohorts) is archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*). Extract the archive to `D:/OAS/unpaired/CDR3_db` (or specify a custom path via `DB_ROOT` in `DBquery.R`).
+
+---
+
+## 8. Citation & Contact
+
+If you use OASpepDB in your research, please cite:
+
+> **SDU Immunoinformatics Group** (2026). *OASpepDB: A High-Throughput Disease-Exclusive Antibody CDR3 Peptidome Database for Bottom-Up Immunoproteomics*. University of Southern Denmark (SDU).
+
+For inquiries, issue reports, or data submissions, please submit an issue via GitHub or contact the maintainers.

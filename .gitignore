@@ -1,7 +1,37 @@
+# History and OS files
 .Rhistory
+.RData
+.Rproj.user/
 .DS_Store
+Thumbs.db
+
+# Data folders (ignore all 'data' or 'Data' directories across repo)
+[Dd]ata/*
+**/[Dd]ata/*
 OAS_full/
 DAT-DB-webapp/pepDB
 DAT-DB-webapp/rsconnect
-Databases-preparation/NCBI_RefSeq_Human_2024_07_25.fasta
-Databases-preparation/UniProt_TR_SP_Human_2024_07_25.fasta
+Archived/
+
+# Keep shell and batch download scripts inside Data folders
+!**/[Dd]ata/*.sh
+!**/[Dd]ata/*.bat
+!**/[Dd]ata/cRAP.fasta
+!**/[Dd]ata/entrapment_cassettes.fasta
+!**/[Dd]ata/OAS_metadata.csv
+
+# Proteomics, genomics, and database large files
+*.parquet
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+*.faa
+*.faa.gz
+*.fasta
+!**/[Dd]ata/cRAP.fasta
+!**/[Dd]ata/entrapment_cassettes.fasta
+*.fasta.gz
+*.csv.gz
+*.tsv.gz
+*.RData
+*.rds
