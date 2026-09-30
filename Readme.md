@@ -127,7 +127,7 @@ flowchart TD
 
 ```bash
 # Python dependencies
-pip install pyarrow duckdb pandas biopython psutil requests
+pip install -r requirements.txt
 
 # R dependencies
 R -e "install.packages(c('shiny', 'bslib', 'DT', 'duckdb', 'DBI', 'arrow', 'dplyr', 'htmltools', 'zip'))"
