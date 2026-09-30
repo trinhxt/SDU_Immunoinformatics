@@ -45,7 +45,6 @@ SDU_Immunoinformatics/
 │       ├── 03_insilico_digest.R            # Step 03: Human proteome in silico digestion
 │       ├── 04_build_disease_db.py          # Step 04: Disease-exclusive database builder
 │       ├── 05_fetch_ncbi_entrapment.py     # Step 05: Camelid VHH entrapment library generator
-│       ├── extract_paired_metadata.py      # Paired repertoire metadata utility
 │       └── generate_unified_alluvial_svg.R # Dynamic alluvial diagram generator
 ├── Archived/                               # Prior versions, deprecated files, and notes
 ├── .gitignore                              # Git exclusion rules for large data artifacts

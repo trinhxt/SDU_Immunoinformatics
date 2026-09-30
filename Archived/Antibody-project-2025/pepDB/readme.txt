@@ -1,1 +1,0 @@
-To run peptides.R, download all .duckdb files from https://zenodo.org/records/11045596 and put them to pepDB folder
