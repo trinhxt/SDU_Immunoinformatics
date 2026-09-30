@@ -2,7 +2,6 @@
 # ==============================================================================
 # OASpepDB: Step 04 - Pure Disease-Exclusive Database Construction Engine
 # ==============================================================================
-# Target Journal: Nature Communications / Nature Biotechnology
 # Author / Lab: SDU_Immunoinformatics
 # Date: 2026-09-28
 #
@@ -178,7 +177,7 @@ def extract_cdr3_tryptic_peptides(
     """
     Performs in-silico tryptic cleavage (cleaves at carboxyl side of Lys/Arg,
     unless followed by Proline) and extracts ONLY bona fide CDR3-bearing tryptic
-    peptides conforming to 4-Pillar Nature Portfolio standards:
+    peptides conforming to rigorous immunoproteomics quality criteria:
       1. Proteotypic length: 7 to 40 amino acids.
       2. Framework blacklist exclusion: Rejects pure framework/tail fragments.
       3. Hypervariable overlap: Covers at least 5 consecutive amino acids in
@@ -575,25 +574,39 @@ def main():
     default_meta = str((script_dir.parent / "Data" / "OAS_metadata.csv").resolve())
     default_neg_ref = str((script_dir.parent / "Data" / "negative_human_reference_peptides.parquet").resolve())
 
+    # Dynamically select default paths
+    candidate_data = Path(r"D:\OAS\unpaired\download")
+    default_data_dir = str(candidate_data) if candidate_data.is_dir() else str((script_dir.parent / "Data" / "raw").resolve())
+
+    candidate_cache = Path(r"D:\OAS\unpaired\cache\healthy_cdr3_cache.parquet")
+    default_healthy = str(candidate_cache) if candidate_cache.is_file() else str((script_dir.parent / "Data" / "healthy_cdr3_cache.parquet").resolve())
+
+    candidate_out = Path(r"D:\OAS\unpaired\CDR3_db")
+    default_out_dir = str(candidate_out) if candidate_out.is_dir() else str((script_dir.parent / "CDR3_db").resolve())
+
     parser = argparse.ArgumentParser(
         description="OASpepDB Step 04: Build Pure Disease-Exclusive Antibody Database (CDR3_db)."
     )
     parser.add_argument(
         "--metadata",
+        "--meta-csv",
+        dest="metadata",
         type=str,
         default=default_meta,
         help="Path to OAS_metadata.csv catalog",
     )
     parser.add_argument(
         "--data-dir",
+        "--input-dir",
+        dest="data_dir",
         type=str,
-        default=r"D:\OAS\unpaired\download",
-        help="Directory containing the 6,344 disease CSV.gz files",
+        default=default_data_dir,
+        help="Directory containing the disease CSV.gz files",
     )
     parser.add_argument(
         "--healthy-cache",
         type=str,
-        default=r"D:\OAS\unpaired\cache\healthy_cdr3_cache.parquet",
+        default=default_healthy,
         help="Path to Tier 1 Healthy CDR3 cache Parquet file",
     )
     parser.add_argument(
@@ -605,14 +618,16 @@ def main():
     parser.add_argument(
         "--out-dir",
         type=str,
-        default=r"D:\OAS\unpaired\CDR3_db",
+        default=default_out_dir,
         help="Root output directory for Hive-partitioned CDR3_db",
     )
     parser.add_argument(
         "--workers",
+        "--threads",
+        dest="workers",
         type=int,
-        default=8,
-        help="Number of concurrent worker threads (default: 8)",
+        default=min(8, os.cpu_count() or 4),
+        help="Number of concurrent worker threads (default: min(8, CPU count))",
     )
     parser.add_argument(
         "--disease",

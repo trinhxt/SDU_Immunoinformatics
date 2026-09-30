@@ -34,9 +34,9 @@ Key Performance Engineering:
      tens of millions of strings into a compact file (< 100 MB).
 
 Default Paths:
-  Metadata:    C:\\Users\\TXT\\Documents\\GitHub\\SDU_Immunoinformatics\\OASpepDB\\Data\\OAS_metadata.csv
-  Data Dir:    D:\\OAS\\unpaired\\download
-  Out Parquet: D:\\OAS\\unpaired\\CDR3_db\\healthy_cdr3_cache.parquet
+  Metadata:    OASpepDB/Data/OAS_metadata.csv
+  Data Dir:    /path/to/OAS_raw
+  Out Parquet: OASpepDB/Data/healthy_cdr3_cache.parquet
 ================================================================================
 """
 
@@ -123,32 +123,46 @@ def extract_healthy_cdr3_from_file(filepath: Path) -> tuple:
 def main():
     script_dir = Path(__file__).resolve().parent
     default_meta = str((script_dir.parent / "Data" / "OAS_metadata.csv").resolve())
+    
+    # Dynamically select data directory if standard local directory exists
+    candidate_data = Path(r"D:\OAS\unpaired\download")
+    default_data_dir = str(candidate_data) if candidate_data.is_dir() else str((script_dir.parent / "Data" / "raw").resolve())
+    
+    candidate_cache = Path(r"D:\OAS\unpaired\cache\healthy_cdr3_cache.parquet")
+    default_out_parquet = str(candidate_cache) if candidate_cache.parent.is_dir() else str((script_dir.parent / "Data" / "healthy_cdr3_cache.parquet").resolve())
+
     parser = argparse.ArgumentParser(
         description="High-Performance Tier 1 Healthy CDR3 Indexer & Parquet Cache Builder."
     )
     parser.add_argument(
         "--metadata",
+        "--meta-csv",
+        dest="metadata",
         type=str,
         default=default_meta,
         help="Path to OAS_metadata.csv catalog file",
     )
     parser.add_argument(
         "--data-dir",
+        "--input-dir",
+        dest="data_dir",
         type=str,
-        default=r"D:\OAS\unpaired\download",
-        help="Directory containing 14,433 trimmed .csv.gz files",
+        default=default_data_dir,
+        help="Directory containing the trimmed .csv.gz OAS files",
     )
     parser.add_argument(
         "--out-parquet",
         type=str,
-        default=r"D:\OAS\unpaired\cache\healthy_cdr3_cache.parquet",
+        default=default_out_parquet,
         help="Output path for the consolidated Healthy CDR3 Parquet cache",
     )
     parser.add_argument(
         "--workers",
+        "--threads",
+        dest="workers",
         type=int,
-        default=16,
-        help="Number of concurrent worker threads (recommended: 16 on 20-core CPU)",
+        default=min(16, os.cpu_count() or 4),
+        help="Number of concurrent worker threads (default: min(16, CPU count))",
     )
     args = parser.parse_args()
 

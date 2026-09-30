@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OASpepDB Pipeline Architecture & Data Flow",
+    "output": "pipeline-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "full-flow",
+        "label": "Full 5-Step Pipeline",
+        "focus": ["oas_repo", "step01", "step02", "healthy_cache", "step04", "cdr3_db", "dbquery"],
+        "note": "Trace complete sequence from raw OAS NGS repertoires to interactive OLAP query."
+      },
+      {
+        "id": "negative-subtraction",
+        "label": "Triple-Tier Negative Subtraction",
+        "focus": ["step02", "healthy_cache", "step03", "proteome_ref", "step04"],
+        "note": "Inspect Tier-1 healthy baseline and Tier-2/3 human proteome negative subtraction."
+      },
+      {
+        "id": "ms-export",
+        "label": "Empirical FDR & MS Search",
+        "focus": ["step05", "entrapment", "dbquery", "ms_engine"],
+        "note": "Examine target-decoy Camelid VHH entrapment controls and MS-ready exports."
+      }
+    ]
+  },
+  "components": [
+    { "id": "oas_repo", "type": "cloud", "label": "OAS Repertoires", "sublabel": "14,433 Human Studies", "pos": [40, 100], "size": [150, 60], "tag": "OPIG Oxford" },
+    { "id": "oas_meta", "type": "database", "label": "Metadata Catalog", "sublabel": "OAS_metadata.csv (19 cols)", "pos": [40, 230], "size": [150, 60] },
+    { "id": "ref_sources", "type": "cloud", "label": "Reference Proteomes", "sublabel": "UniProt + RefSeq", "pos": [40, 360], "size": [150, 60], "tag": "Swiss-Prot & NCBI" },
+    { "id": "ncbi_vhh", "type": "cloud", "label": "NCBI Protein", "sublabel": "Camelid VHH Records", "pos": [40, 490], "size": [150, 60], "tag": "Entrez E-utilities" },
+
+    { "id": "step01", "type": "backend", "label": "01_download_OAS", "sublabel": "Step 01: Ingestion", "pos": [260, 165], "size": [150, 60], "tag": "Multi-threaded" },
+    { "id": "ref_fetcher", "type": "backend", "label": "download_ref", "sublabel": "Streaming Fetcher", "pos": [260, 360], "size": [150, 60], "tag": "REST & FTP" },
+    { "id": "step05", "type": "backend", "label": "05_fetch_ncbi", "sublabel": "Step 05: Entrapment", "pos": [260, 490], "size": [150, 60], "tag": "Isobaric I->L" },
+
+    { "id": "step02", "type": "backend", "label": "02_build_healthy", "sublabel": "Step 02: Indexer", "pos": [480, 165], "size": [150, 60], "tag": "PyArrow SIMD" },
+    { "id": "step03", "type": "backend", "label": "03_insilico_digest", "sublabel": "Step 03: Digestion", "pos": [480, 360], "size": [150, 60], "tag": "Trypsin [KR](?!P)" },
+
+    { "id": "healthy_cache", "type": "database", "label": "Healthy Cache", "sublabel": "healthy_cdr3.parquet", "pos": [700, 165], "size": [150, 60], "tag": ">294M Unique CDR3" },
+    { "id": "proteome_ref", "type": "database", "label": "Negative Reference", "sublabel": "negative_ref.parquet", "pos": [700, 360], "size": [150, 60], "tag": "2.88M Human Peps" },
+    { "id": "entrapment", "type": "database", "label": "Entrapment Library", "sublabel": "entrapment.fasta", "pos": [700, 490], "size": [150, 60], "tag": "Camelid VHH" },
+
+    { "id": "step04", "type": "backend", "label": "04_build_disease_db", "sublabel": "Step 04: DB Engine", "pos": [920, 260], "size": [160, 64], "tag": "Micro-Cassette Engine" },
+
+    { "id": "cdr3_db", "type": "database", "label": "CDR3_db (18 GB)", "sublabel": "65.5M Clonotypes", "pos": [1140, 260], "size": [150, 60], "tag": "Hive Partitioned" },
+    { "id": "dbquery", "type": "frontend", "label": "DBquery.R", "sublabel": "Interactive Shiny App", "pos": [1140, 390], "size": [150, 60], "tag": "DuckDB OLAP" },
+    { "id": "ms_engine", "type": "external", "label": "MS Search Engine", "sublabel": "FragPipe / MaxQuant", "pos": [1140, 520], "size": [150, 60], "tag": "LC-MS/MS Validation" }
+  ],
+  "connections": [
+    { "id": "oas-to-step01", "from": "oas_repo", "to": "step01" },
+    { "id": "meta-to-step01", "from": "oas_meta", "to": "step01" },
+    { "id": "ref-to-fetcher", "from": "ref_sources", "to": "ref_fetcher" },
+    { "id": "ncbi-to-step05", "from": "ncbi_vhh", "to": "step05" },
+
+    { "id": "step01-to-step02", "from": "step01", "to": "step02" },
+    { "id": "fetcher-to-step03", "from": "ref_fetcher", "to": "step03" },
+    { "id": "step05-to-entrapment", "from": "step05", "to": "entrapment" },
+
+    { "id": "step02-to-cache", "from": "step02", "to": "healthy_cache" },
+    { "id": "step03-to-ref", "from": "step03", "to": "proteome_ref" },
+
+    { "id": "step01-to-step04", "from": "step01", "to": "step04", "variant": "emphasis" },
+    { "id": "cache-to-step04", "from": "healthy_cache", "to": "step04", "variant": "security" },
+    { "id": "ref-to-step04", "from": "proteome_ref", "to": "step04", "variant": "security" },
+
+    { "id": "step04-to-db", "from": "step04", "to": "cdr3_db", "variant": "emphasis" },
+    { "id": "db-to-dbquery", "from": "cdr3_db", "to": "dbquery" },
+    { "id": "entrapment-to-dbquery", "from": "entrapment", "to": "dbquery" },
+    { "id": "dbquery-to-ms", "from": "dbquery", "to": "ms_engine", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ingestion & Multi-Tier Negative Subtraction",
+      "items": [
+        "Step 01 parallel-downloads 14,433 human unpaired B-cell repertoires from OAS",
+        "Step 02 indexes >294M unique healthy CDR3 sequences into a high-compression Parquet cache",
+        "Step 03 digests canonical UniProt and RefSeq proteomes (Trypsin with Proline rule: [KR](?!P)) into 2.88M tryptic peptides"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Disease Database Engine & Delivery",
+      "items": [
+        "Step 04 subjects 6,344 disease files to Triple-Tier Negative Subtraction and micro-cassette assembly",
+        "Quantifies clinical patient sharing (N >= 1) and read depth across 25 disease cohorts",
+        "Stores 65.5M disease-exclusive clonotypes in 18 GB Hive-partitioned Apache Parquet (ZSTD L9)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Empirical Target-Decoy FDR & Interactive OLAP",
+      "items": [
+        "Step 05 extracts published Camelid VHH sequences with isobaric I -> L conversion for target-decoy benchmarking",
+        "DBquery.R provides sub-second DuckDB OLAP queries, dynamic Alluvial flows, and exact reverse lookup",
+        "Generates calibrated FASTA libraries with appended common contaminants (cRAP) and entrapment controls"
+      ]
+    }
+  ]
+}

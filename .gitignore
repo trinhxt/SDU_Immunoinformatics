@@ -5,6 +5,13 @@
 .DS_Store
 Thumbs.db
 
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+
 # Data folders (ignore all 'data' or 'Data' directories across repo)
 [Dd]ata/*
 **/[Dd]ata/*

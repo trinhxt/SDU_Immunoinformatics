@@ -3,9 +3,9 @@
 ## OASpepDB: Step 03 - In Silico Digestion of Human Reference Proteomes
 ## (03_insilico_digest.R)
 ## Purpose:
-##   Perform in silico tryptic digestion (Trypsin/P, missed cleavages 0-2,
-##   length 6-45 aa, preserving native I and L residues) on two human reference
-##   proteome datasets:
+##   Perform in silico tryptic digestion (Trypsin, cleavage C-terminal to Lys/Arg
+##   excluding Pro [Keil rule], missed cleavages 0-2, length 6-45 aa, preserving
+##   native I and L residues) on two human reference proteome datasets:
 ##     1. UniProt Swiss-Prot (Canonical + Reviewed Isoforms)
 ##     2. NCBI RefSeq Human Proteome (GRCh38.p14: NP_ + XP_)
 ##   Outputs:
@@ -34,11 +34,29 @@ cat("===========================================================================
 cat("  OASpepDB: IN SILICO DIGESTION & NEGATIVE REFERENCE GENERATOR                  \n")
 cat("================================================================================\n")
 
-base_dir <- if (dir.exists(file.path(getwd(), "Data"))) getwd() else if (dir.exists(file.path(getwd(), "OASpepDB", "Data"))) file.path(getwd(), "OASpepDB") else "C:/Users/TXT/Documents/GitHub/SDU_Immunoinformatics/OASpepDB"
+# Dynamically locate Data directory relative to working dir or script location
+base_dir <- if (dir.exists(file.path(getwd(), "Data"))) {
+  getwd()
+} else if (dir.exists(file.path(getwd(), "OASpepDB", "Data"))) {
+  file.path(getwd(), "OASpepDB")
+} else if (dir.exists(file.path(dirname(getwd()), "Data"))) {
+  dirname(getwd())
+} else {
+  getwd()
+}
 data_dir <- file.path(base_dir, "Data")
 
-fasta_uniprot <- file.path(data_dir, "UniProt_SP_canonical_isoform_2026_09_26.fasta")
-fasta_refseq  <- file.path(data_dir, "GCF_000001405.40_GRCh38.p14_protein.faa")
+# Locate reference files (exact or versioned)
+find_reference_file <- function(dir, pattern, default_name) {
+  if (dir.exists(dir)) {
+    matches <- list.files(dir, pattern = pattern, full.names = TRUE)
+    if (length(matches) > 0) return(matches[1])
+  }
+  return(file.path(dir, default_name))
+}
+
+fasta_uniprot <- find_reference_file(data_dir, "^UniProt_SP_canonical_isoform.*\\.fasta$", "UniProt_SP_canonical_isoform_2026_09_26.fasta")
+fasta_refseq  <- find_reference_file(data_dir, "^GCF_.*\\.faa$", "GCF_000001405.40_GRCh38.p14_protein.faa")
 
 out_parquet <- file.path(data_dir, "negative_human_reference_peptides.parquet")
 out_duckdb  <- file.path(data_dir, "negative_reference.duckdb")
@@ -54,13 +72,23 @@ cat("UniProt FASTA:      ", basename(fasta_uniprot), "\n")
 cat("RefSeq FASTA:       ", basename(fasta_refseq), "\n")
 cat("Output Parquet:     ", basename(out_parquet), "\n")
 cat("Output DuckDB:      ", basename(out_duckdb), "\n")
-cat(sprintf("Digestion Rules:    Trypsin/P | Missed 0-%d | Length %d-%d aa | Native I/L Preserved\n",
+cat(sprintf("Digestion Rules:    Trypsin (excluding Pro) | Missed 0-%d | Length %d-%d aa | Native I/L Preserved\n",
             MAX_MISSED, MIN_LEN, MAX_LEN))
 cat("================================================================================\n\n")
 
-# Verify input files exist
-if (!file.exists(fasta_uniprot)) stop("UniProt FASTA file not found: ", fasta_uniprot)
-if (!file.exists(fasta_refseq))  stop("RefSeq FASTA file not found: ", fasta_refseq)
+# Verify input files exist with actionable guidance
+if (!file.exists(fasta_uniprot)) {
+  stop(sprintf(
+    "UniProt FASTA file not found: %s\nPlease run 'python OASpepDB/Scripts/download_reference_proteomes.py' to download reference proteomes.",
+    fasta_uniprot
+  ))
+}
+if (!file.exists(fasta_refseq)) {
+  stop(sprintf(
+    "RefSeq FASTA file not found: %s\nPlease run 'python OASpepDB/Scripts/download_reference_proteomes.py' to download reference proteomes.",
+    fasta_refseq
+  ))
+}
 
 # ==============================================================================
 # 2. HIGH-PERFORMANCE IN SILICO TRYPTIC DIGESTION FUNCTION
@@ -70,8 +98,8 @@ digest_protein_chunk <- function(seq_chunk, min_len = 6L, max_len = 45L, missed 
   
   for (k in seq_along(seq_chunk)) {
     seq <- seq_chunk[[k]]
-    # Cleave after Lysine (K) or Arginine (R)
-    cuts <- gregexpr("[KR]", seq)[[1]]
+    # Cleave C-terminal to Lysine (K) or Arginine (R), strictly excluding when followed by Proline (P)
+    cuts <- gregexpr("[KR](?!P)", seq, perl = TRUE)[[1]]
     cuts <- cuts[cuts > 0]
     n <- nchar(seq)
     

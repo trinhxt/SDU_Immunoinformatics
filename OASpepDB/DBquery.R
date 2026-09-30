@@ -29,21 +29,28 @@ APP_DIR <- tryCatch({
   if (dir.exists("OASpepDB")) file.path(getwd(), "OASpepDB") else getwd()
 })
 
-resolve_data_path <- function(filename) {
-  candidates <- c(
-    file.path(APP_DIR, "Data", filename),
-    file.path(getwd(), "OASpepDB", "Data", filename),
-    file.path(getwd(), "Data", filename),
-    file.path("C:/Users/TXT/Documents/GitHub/SDU_Immunoinformatics/OASpepDB/Data", filename)
+resolve_data_path <- function(filename, pattern = NULL) {
+  search_dirs <- c(
+    file.path(APP_DIR, "Data"),
+    file.path(getwd(), "OASpepDB", "Data"),
+    file.path(getwd(), "Data"),
+    file.path(dirname(APP_DIR), "Data")
   )
-  for (cand in candidates) {
-    if (file.exists(cand)) return(cand)
+  for (d in search_dirs) {
+    if (dir.exists(d)) {
+      if (!is.null(pattern)) {
+        matches <- list.files(d, pattern = pattern, full.names = TRUE)
+        if (length(matches) > 0) return(matches[1])
+      }
+      p <- file.path(d, filename)
+      if (file.exists(p)) return(p)
+    }
   }
-  return(candidates[1])
+  return(file.path(search_dirs[1], filename))
 }
 
 CRAP_REF_PATH       <- resolve_data_path("cRAP.fasta")
-UNIPROT_REF_PATH    <- resolve_data_path("Uniprot_SP_canonical_2026_09_14.fasta")
+UNIPROT_REF_PATH    <- resolve_data_path("Uniprot_SP_canonical_2026_09_14.fasta", pattern = "^Uni[pP]rot_SP_canonical.*\\.fasta$")
 ENTRAPMENT_REF_PATH <- resolve_data_path("entrapment_cassettes.fasta")
 
 detect_default_db_root <- function() {
@@ -230,7 +237,8 @@ build_cohort_buttons <- function(disease_vec, color_class) {
 # ------------------------------------------------------------------------------
 get_db_con <- function() {
   con <- dbConnect(duckdb::duckdb(dbdir = ":memory:"))
-  dbExecute(con, "PRAGMA threads=8;")
+  n_cores <- max(1L, parallel::detectCores() - 1L)
+  dbExecute(con, sprintf("PRAGMA threads=%d;", min(n_cores, 16L)))
   dbExecute(con, "PRAGMA memory_limit='16GB';")
   return(con)
 }
@@ -1216,7 +1224,7 @@ server <- function(input, output, session) {
     file.path(APP_DIR, "Scripts", "generate_unified_alluvial_svg.R"),
     file.path(getwd(), "OASpepDB", "Scripts", "generate_unified_alluvial_svg.R"),
     file.path(getwd(), "Scripts", "generate_unified_alluvial_svg.R"),
-    "C:/Users/TXT/Documents/GitHub/SDU_Immunoinformatics/OASpepDB/Scripts/generate_unified_alluvial_svg.R"
+    file.path(dirname(APP_DIR), "Scripts", "generate_unified_alluvial_svg.R")
   )
   unified_gen_script <- unified_candidates[file.exists(unified_candidates)][1]
   if (!is.na(unified_gen_script) && file.exists(unified_gen_script)) {
@@ -2436,10 +2444,20 @@ server <- function(input, output, session) {
     })
   })
 
+  open_folder_in_os <- function(path) {
+    if (.Platform$OS.type == "windows") {
+      shell.exec(path)
+    } else if (Sys.info()["sysname"] == "Darwin") {
+      system2("open", shQuote(path))
+    } else {
+      system2("xdg-open", shQuote(path))
+    }
+  }
+
   observeEvent(input$btn_open_export_dir, {
     d <- export_target_folder()
     if (dir.exists(d)) {
-      shell.exec(d)
+      open_folder_in_os(d)
     }
   })
 
@@ -2527,7 +2545,9 @@ server <- function(input, output, session) {
     
     withProgress(message = "Searching database for identified peptide fragment(s)...", value = 0.5, {
       # Exact match with tryptic peptide fragment in semicolon-separated list
-      conds <- sprintf("list_contains(string_split(tryptic_peptides, ';'), '%s')", peptides)
+      # Escape single quotes to prevent SQL syntax errors / malformed queries
+      peptides_clean <- gsub("'", "''", peptides)
+      conds <- sprintf("list_contains(string_split(tryptic_peptides, ';'), '%s')", peptides_clean)
       where_clause <- paste(conds, collapse = " OR ")
       
       lookup_sql <- sprintf("
