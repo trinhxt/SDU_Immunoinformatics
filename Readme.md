@@ -41,12 +41,7 @@ SDU_Immunoinformatics/
 │   │   ├── OAS_metadata.csv                # Curated metadata catalog (14,433 studies)
 │   │   ├── cRAP.fasta                      # Common Repository of Adventitious Proteins
 │   │   ├── entrapment_cassettes.fasta      # Camelid VHH entrapment sequences for empirical FDR
-│   │   ├── bulk_download_human_unpaired.sh # Bulk download script for OAS repertoires
-│   │   ├── download_reference_proteomes.sh # Bash wrapper for human reference proteomes
-│   │   └── download_reference_proteomes.bat# Windows wrapper for human reference proteomes
-│   ├── docs/                               # Architecture diagrams and documentation
-│   │   ├── pipeline-architecture.html      # Interactive Archify pipeline map
-│   │   └── pipeline-architecture.json      # Archify typed schema specification
+│   │   └── bulk_download_human_unpaired.sh # Bulk download script for OAS repertoires
 │   └── Scripts/
 │       ├── 01_download_OAS.py              # Step 01: Parallel download of OAS repertoires
 │       ├── 02_build_healthy_cdr3_cache.py  # Step 02: Multi-threaded healthy CDR3 indexer
@@ -156,7 +151,7 @@ python OASpepDB/Scripts/02_build_healthy_cdr3_cache.py \
 ```
 
 ### Step 3: Digest Human Reference Proteomes (Tier-2 & Tier-3 Subtraction)
-Download canonical UniProtKB/Swiss-Prot and NCBI RefSeq human reference proteomes, then perform *in silico* tryptic digestion (Trypsin, cleavage C-terminal to Lys/Arg excluding Pro [Keil rule], 0–2 missed cleavages, peptide length 6–45 aa):
+Generates an *in silico* tryptic peptidome (Trypsin/P cleavage, 0–2 missed cleavages, peptide length 6–45 aa) from UniProtKB/Swiss-Prot and NCBI RefSeq:
 ```bash
 # Automated streaming download of UniProt and NCBI RefSeq reference proteomes
 python OASpepDB/Scripts/download_reference_proteomes.py
