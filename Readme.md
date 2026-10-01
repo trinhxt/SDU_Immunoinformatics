@@ -41,7 +41,8 @@ SDU_Immunoinformatics/
 │   │   ├── OAS_metadata.csv                # Curated metadata catalog (14,433 studies)
 │   │   ├── cRAP.fasta                      # Common Repository of Adventitious Proteins
 │   │   ├── entrapment_cassettes.fasta      # Camelid VHH entrapment sequences for empirical FDR
-│   │   └── bulk_download_human_unpaired.sh # Bulk download script for OAS repertoires
+│   │   ├── demo_download_human_unpaired.sh # Lightweight demo download for reviewer verification (~15 KB)
+│   │   └── bulk_download_human_unpaired.sh # Full production bulk download script (14,433 studies)
 │   └── scripts/
 │       ├── 01_download_OAS.py              # Step 01: Parallel download of OAS repertoires
 │       ├── 02_build_healthy_cdr3_cache.py  # Step 02: Multi-threaded healthy CDR3 indexer
@@ -135,9 +136,17 @@ R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('Bi
 ```
 
 ### Step 1: Download Raw Repertoire Data from OAS
-Run the automated downloader using the metadata catalog:
+Run the automated downloader using the demo repertoire script (fast test, ~15 KB) or full metadata catalog (production):
 ```bash
-python OASpepDB/scripts/01_download_OAS.py --metadata OASpepDB/data/OAS_metadata.csv --out-dir /path/to/OAS_raw
+# Demo workflow verification (8 curated repertoires, ~15 KB, runs in < 2 seconds):
+python OASpepDB/scripts/01_download_OAS.py \
+    --sh OASpepDB/data/demo_download_human_unpaired.sh \
+    --out-dir /path/to/OAS_demo_raw
+
+# Full production pipeline (all 14,433 unpaired repertoires):
+python OASpepDB/scripts/01_download_OAS.py \
+    --metadata OASpepDB/data/OAS_metadata.csv \
+    --out-dir /path/to/OAS_raw
 ```
 
 ### Step 2: Index Healthy Control CDR3 Cache (Tier-1 Subtraction)

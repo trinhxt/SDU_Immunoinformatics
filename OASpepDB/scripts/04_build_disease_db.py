@@ -277,7 +277,9 @@ def load_negative_human_reference(ref_path: Path) -> set[str]:
     t0 = time.time()
 
     if not ref_path.is_file():
-        raise FileNotFoundError(f"Human reference peptides file not found at: {ref_path}")
+        print(f"  [Notice] Reference peptides file not found at {ref_path}.")
+        print("  Proceeding with Tier 1 (Healthy Repertoire) negative subtraction.")
+        return set()
 
     table = pq.read_table(ref_path, columns=["peptide"])
     peptides = table["peptide"].to_pylist()
