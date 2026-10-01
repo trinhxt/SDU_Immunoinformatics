@@ -34,17 +34,22 @@ cat("===========================================================================
 cat("  OASpepDB: IN SILICO DIGESTION & NEGATIVE REFERENCE GENERATOR                  \n")
 cat("================================================================================\n")
 
-# Dynamically locate Data directory relative to working dir or script location
-base_dir <- if (dir.exists(file.path(getwd(), "Data"))) {
-  getwd()
-} else if (dir.exists(file.path(getwd(), "OASpepDB", "Data"))) {
-  file.path(getwd(), "OASpepDB")
-} else if (dir.exists(file.path(dirname(getwd()), "Data"))) {
-  dirname(getwd())
-} else {
-  getwd()
+# Dynamically locate data directory relative to working dir or script location
+find_data_dir <- function() {
+  candidates <- c(
+    file.path(getwd(), "data"),
+    file.path(getwd(), "Data"),
+    file.path(getwd(), "OASpepDB", "data"),
+    file.path(getwd(), "OASpepDB", "Data"),
+    file.path(dirname(getwd()), "data"),
+    file.path(dirname(getwd()), "Data")
+  )
+  for (d in candidates) {
+    if (dir.exists(d)) return(d)
+  }
+  return(file.path(getwd(), "data"))
 }
-data_dir <- file.path(base_dir, "Data")
+data_dir <- find_data_dir()
 
 # Locate reference files (exact or versioned)
 find_reference_file <- function(dir, pattern, default_name) {
@@ -72,20 +77,20 @@ cat("UniProt FASTA:      ", basename(fasta_uniprot), "\n")
 cat("RefSeq FASTA:       ", basename(fasta_refseq), "\n")
 cat("Output Parquet:     ", basename(out_parquet), "\n")
 cat("Output DuckDB:      ", basename(out_duckdb), "\n")
-cat(sprintf("Digestion Rules:    Trypsin (excluding Pro) | Missed 0-%d | Length %d-%d aa | Native I/L Preserved\n",
+cat(sprintf("Digestion Rules:    Trypsin (excluding Pro) | Missed 0-%d | Length %d-%d AA | Native I/L Preserved\n",
             MAX_MISSED, MIN_LEN, MAX_LEN))
 cat("================================================================================\n\n")
 
 # Verify input files exist with actionable guidance
 if (!file.exists(fasta_uniprot)) {
   stop(sprintf(
-    "UniProt FASTA file not found: %s\nPlease run 'python OASpepDB/Scripts/download_reference_proteomes.py' to download reference proteomes.",
+    "UniProt FASTA file not found: %s\nPlease run 'python OASpepDB/scripts/download_reference_proteomes.py' to download reference proteomes.",
     fasta_uniprot
   ))
 }
 if (!file.exists(fasta_refseq)) {
   stop(sprintf(
-    "RefSeq FASTA file not found: %s\nPlease run 'python OASpepDB/Scripts/download_reference_proteomes.py' to download reference proteomes.",
+    "RefSeq FASTA file not found: %s\nPlease run 'python OASpepDB/scripts/download_reference_proteomes.py' to download reference proteomes.",
     fasta_refseq
   ))
 }

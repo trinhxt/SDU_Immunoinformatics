@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_SCRIPT="${SCRIPT_DIR}/../Scripts/download_reference_proteomes.py"
+PYTHON_SCRIPT="${SCRIPT_DIR}/../scripts/download_reference_proteomes.py"
 
 if command -v python3 &>/dev/null; then
     python3 "${PYTHON_SCRIPT}" --out-dir "${SCRIPT_DIR}" "$@"

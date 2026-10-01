@@ -5,6 +5,14 @@
 #          Parquet reverse-lookup, and multi-omics provenance tracking.
 # ==============================================================================
 
+# Auto-install missing packages if running outside of launcher
+required_pkgs <- c("shiny", "bslib", "DT", "duckdb", "DBI", "arrow", "ggplot2", "plotly", "dplyr", "htmlwidgets", "zip")
+missing_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
+if (length(missing_pkgs) > 0) {
+  message("Installing missing R packages for OASpepDB: ", paste(missing_pkgs, collapse = ", "))
+  install.packages(missing_pkgs, repos = "https://cloud.r-project.org")
+}
+
 suppressPackageStartupMessages({
   library(shiny)
   library(bslib)
@@ -31,9 +39,13 @@ APP_DIR <- tryCatch({
 
 resolve_data_path <- function(filename, pattern = NULL) {
   search_dirs <- c(
+    file.path(APP_DIR, "data"),
     file.path(APP_DIR, "Data"),
+    file.path(getwd(), "OASpepDB", "data"),
     file.path(getwd(), "OASpepDB", "Data"),
+    file.path(getwd(), "data"),
     file.path(getwd(), "Data"),
+    file.path(dirname(APP_DIR), "data"),
     file.path(dirname(APP_DIR), "Data")
   )
   for (d in search_dirs) {
@@ -59,6 +71,8 @@ detect_default_db_root <- function() {
     file.path(getwd(), "CDR3_db"),
     file.path(APP_DIR, "CDR3_db"),
     file.path(dirname(APP_DIR), "CDR3_db"),
+    file.path(APP_DIR, "demo_CDR3_db"),
+    file.path(dirname(APP_DIR), "demo_CDR3_db"),
     "C:/OAS/unpaired/CDR3_db"
   )
   for (cand in candidates) {
@@ -69,6 +83,20 @@ detect_default_db_root <- function() {
       }
     }
   }
+
+  # If no candidate DB found, auto-generate lightweight demo database
+  gen_script <- file.path(APP_DIR, "scripts", "generate_demo_db.R")
+  if (!file.exists(gen_script)) {
+    gen_script <- file.path(APP_DIR, "Scripts", "generate_demo_db.R")
+  }
+  if (file.exists(gen_script)) {
+    tryCatch({
+      source(gen_script, local = TRUE)
+      demo_path <- file.path(APP_DIR, "demo_CDR3_db")
+      if (dir.exists(demo_path)) return(normalizePath(demo_path, winslash = "/"))
+    }, error = function(e) NULL)
+  }
+
   return("")
 }
 
@@ -236,7 +264,10 @@ build_cohort_buttons <- function(disease_vec, color_class) {
 # DuckDB Connection Helper
 # ------------------------------------------------------------------------------
 get_db_con <- function() {
-  con <- dbConnect(duckdb::duckdb(dbdir = ":memory:"))
+  con <- tryCatch(
+    dbConnect(duckdb::duckdb(dbdir = ":memory:", shared_home = FALSE)),
+    error = function(e) dbConnect(duckdb::duckdb(dbdir = ":memory:"))
+  )
   n_cores <- max(1L, parallel::detectCores() - 1L)
   dbExecute(con, sprintf("PRAGMA threads=%d;", min(n_cores, 16L)))
   dbExecute(con, "PRAGMA memory_limit='16GB';")

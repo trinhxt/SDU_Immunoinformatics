@@ -29,6 +29,7 @@ Archived/
 
 # Proteomics, genomics, and database large files
 *.parquet
+!**/demo_CDR3_db/**
 *.duckdb
 *.duckdb.wal
 *.duckdb.tmp

@@ -257,8 +257,9 @@ def load_completed_catalog(meta_csv: str, data_dir: str) -> set:
 
 def main():
     script_dir = Path(__file__).resolve().parent
-    default_meta = str((script_dir.parent / "Data" / "OAS_metadata.csv").resolve())
-    default_sh = str((script_dir.parent / "Data" / "bulk_download_human_unpaired.sh").resolve())
+    data_dir_name = "data" if (script_dir.parent / "data").is_dir() else "Data"
+    default_meta = str((script_dir.parent / data_dir_name / "OAS_metadata.csv").resolve())
+    default_sh = str((script_dir.parent / data_dir_name / "bulk_download_human_unpaired.sh").resolve())
     default_out = r"D:\OAS\human_unpaired"
 
     parser = argparse.ArgumentParser(
@@ -269,7 +270,7 @@ def main():
         "--metadata", "--meta-csv",
         dest="metadata",
         default=default_meta,
-        help="Path to OAS_metadata.csv reference catalog (default: OASpepDB/Data/OAS_metadata.csv)"
+        help="Path to OAS_metadata.csv reference catalog (default: OASpepDB/data/OAS_metadata.csv)"
     )
     # Support both --out-dir and --data-dir for seamless CLI compatibility
     parser.add_argument(

@@ -41,7 +41,8 @@ USER_AGENT = "SDU-Immunoinformatics/3.0 (academic research; contact: trinh@sdu.d
 
 def main():
     script_dir = Path(__file__).resolve().parent
-    default_out = (script_dir.parent / "Data" / "entrapment_cassettes.fasta").resolve()
+    data_dir_name = "data" if (script_dir.parent / "data").is_dir() else "Data"
+    default_out = (script_dir.parent / data_dir_name / "entrapment_cassettes.fasta").resolve()
 
     parser = argparse.ArgumentParser(
         description="OASpepDB: Fetch and format authentic Camelid VHH entrapment controls from NCBI Entrez."

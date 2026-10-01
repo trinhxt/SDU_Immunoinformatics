@@ -37,12 +37,12 @@ SDU_Immunoinformatics/
 │   ├── DBquery-Windows.bat                 # Launch script for Windows
 │   ├── DBquery-Mac.command                 # Launch script for macOS
 │   ├── DBquery-Linux.sh                    # Launch script for Linux
-│   ├── Data/
+│   ├── data/
 │   │   ├── OAS_metadata.csv                # Curated metadata catalog (14,433 studies)
 │   │   ├── cRAP.fasta                      # Common Repository of Adventitious Proteins
 │   │   ├── entrapment_cassettes.fasta      # Camelid VHH entrapment sequences for empirical FDR
 │   │   └── bulk_download_human_unpaired.sh # Bulk download script for OAS repertoires
-│   └── Scripts/
+│   └── scripts/
 │       ├── 01_download_OAS.py              # Step 01: Parallel download of OAS repertoires
 │       ├── 02_build_healthy_cdr3_cache.py  # Step 02: Multi-threaded healthy CDR3 indexer
 │       ├── 03_insilico_digest.R            # Step 03: Human proteome in silico digestion
@@ -129,22 +129,22 @@ flowchart TD
 # Python dependencies
 pip install -r requirements.txt
 
-# R dependencies
-R -e "install.packages(c('shiny', 'bslib', 'DT', 'duckdb', 'DBI', 'arrow', 'dplyr', 'htmltools', 'zip'))"
+# R dependencies (all 11 packages required by the Shiny app)
+R -e "install.packages(c('shiny', 'bslib', 'DT', 'duckdb', 'DBI', 'arrow', 'ggplot2', 'plotly', 'dplyr', 'htmlwidgets', 'zip'), repos='https://cloud.r-project.org')"
 R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('Biostrings')"
 ```
 
 ### Step 1: Download Raw Repertoire Data from OAS
 Run the automated downloader using the metadata catalog:
 ```bash
-python OASpepDB/Scripts/01_download_OAS.py --metadata OASpepDB/Data/OAS_metadata.csv --out-dir /path/to/OAS_raw
+python OASpepDB/scripts/01_download_OAS.py --metadata OASpepDB/data/OAS_metadata.csv --out-dir /path/to/OAS_raw
 ```
 
 ### Step 2: Index Healthy Control CDR3 Cache (Tier-1 Subtraction)
 Extracts and indexes CDR3 sequences from 8,089 healthy repertoires (`Disease == 'None'`) into a compressed Parquet cache:
 ```bash
-python OASpepDB/Scripts/02_build_healthy_cdr3_cache.py \
-    --metadata OASpepDB/Data/OAS_metadata.csv \
+python OASpepDB/scripts/02_build_healthy_cdr3_cache.py \
+    --metadata OASpepDB/data/OAS_metadata.csv \
     --data-dir /path/to/OAS_raw \
     --out-parquet /path/to/CDR3_db/healthy_cdr3_cache.parquet \
     --workers 16
@@ -154,21 +154,21 @@ python OASpepDB/Scripts/02_build_healthy_cdr3_cache.py \
 Generates an *in silico* tryptic peptidome (Trypsin/P cleavage, 0–2 missed cleavages, peptide length 6–45 aa) from UniProtKB/Swiss-Prot and NCBI RefSeq:
 ```bash
 # Automated streaming download of UniProt and NCBI RefSeq reference proteomes
-python OASpepDB/Scripts/download_reference_proteomes.py
+python OASpepDB/scripts/download_reference_proteomes.py
 
 # In silico tryptic digestion and negative index construction
-Rscript OASpepDB/Scripts/03_insilico_digest.R
+Rscript OASpepDB/scripts/03_insilico_digest.R
 ```
-*Outputs: `OASpepDB/Data/negative_human_reference_peptides.parquet` and `OASpepDB/Data/negative_reference.duckdb`.*
+*Outputs: `OASpepDB/data/negative_human_reference_peptides.parquet` and `OASpepDB/data/negative_reference.duckdb`.*
 
 ### Step 4: Construct Disease-Exclusive Hive Database
 Filters disease-exclusive sequences, quantifies patient sharing ($N$ patients) and read coverage, and partitions data by clinical cohort:
 ```bash
-python OASpepDB/Scripts/04_build_disease_db.py \
-    --metadata OASpepDB/Data/OAS_metadata.csv \
+python OASpepDB/scripts/04_build_disease_db.py \
+    --metadata OASpepDB/data/OAS_metadata.csv \
     --data-dir /path/to/OAS_raw \
     --healthy-cache /path/to/CDR3_db/healthy_cdr3_cache.parquet \
-    --negative-ref OASpepDB/Data/negative_human_reference_peptides.parquet \
+    --negative-ref OASpepDB/data/negative_human_reference_peptides.parquet \
     --out-dir /path/to/CDR3_db \
     --workers 8
 ```
@@ -186,15 +186,18 @@ CDR3_db/
 Queries NCBI Entrez E-utilities for published Camelid VHH sequences, producing isobaric ($I \rightarrow L$) micro-cassettes for target-decoy empirical FDR calibration:
 ```bash
 # Extract authentic Camelid VHH cassettes (default: 2,000; scale up with --target-count)
-python OASpepDB/Scripts/05_fetch_ncbi_entrapment.py --target-count 2000
+python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 ```
-*Output: `OASpepDB/Data/entrapment_cassettes.fasta`.*
+*Output: `OASpepDB/data/entrapment_cassettes.fasta`.*
 
 ---
 
 ## 4. Running the Interactive Explorer
 
 The repository includes a standalone R Shiny application utilizing an in-memory DuckDB engine for rapid querying and multi-format data export.
+
+> [!TIP]
+> **Immediate Reproducibility**: The 1-click launchers automatically verify and install any missing R packages on first launch, and automatically connect to the included sample database (`OASpepDB/demo_CDR3_db`) out-of-the-box. Reviewers can immediately test the UI, query filters, exports, and reverse lookup without needing to wait for an 18 GB download.
 
 ### 1-Click Launchers:
 * **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`
@@ -245,7 +248,7 @@ shiny::runApp("DBquery.R", launch.browser = TRUE, port = 8080)
 
 ## 7. Data Availability
 
-* **Catalog and Reference Annotations**: Included directly in this repository under [`OASpepDB/Data/`](OASpepDB/Data/).
+* **Catalog and Reference Annotations**: Included directly in this repository under [`OASpepDB/data/`](OASpepDB/data/).
 * **Raw Repertoire Sequences**: Publicly hosted by the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/).
 * **Pre-compiled Parquet Database**: The complete partitioned database (~18 GB compressed Parquet across 25 cohorts) is archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*). Extract the archive to `D:/OAS/unpaired/CDR3_db` (or select your custom database folder via the 'Load DB' button in `DBquery.R`).
 

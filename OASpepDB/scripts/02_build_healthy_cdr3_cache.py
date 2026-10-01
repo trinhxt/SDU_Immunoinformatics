@@ -122,14 +122,15 @@ def extract_healthy_cdr3_from_file(filepath: Path) -> tuple:
 # ------------------------------------------------------------------------------
 def main():
     script_dir = Path(__file__).resolve().parent
-    default_meta = str((script_dir.parent / "Data" / "OAS_metadata.csv").resolve())
+    data_dir_name = "data" if (script_dir.parent / "data").is_dir() else "Data"
+    default_meta = str((script_dir.parent / data_dir_name / "OAS_metadata.csv").resolve())
     
     # Dynamically select data directory if standard local directory exists
     candidate_data = Path(r"D:\OAS\unpaired\download")
-    default_data_dir = str(candidate_data) if candidate_data.is_dir() else str((script_dir.parent / "Data" / "raw").resolve())
+    default_data_dir = str(candidate_data) if candidate_data.is_dir() else str((script_dir.parent / data_dir_name / "raw").resolve())
     
     candidate_cache = Path(r"D:\OAS\unpaired\cache\healthy_cdr3_cache.parquet")
-    default_out_parquet = str(candidate_cache) if candidate_cache.parent.is_dir() else str((script_dir.parent / "Data" / "healthy_cdr3_cache.parquet").resolve())
+    default_out_parquet = str(candidate_cache) if candidate_cache.parent.is_dir() else str((script_dir.parent / data_dir_name / "healthy_cdr3_cache.parquet").resolve())
 
     parser = argparse.ArgumentParser(
         description="High-Performance Tier 1 Healthy CDR3 Indexer & Parquet Cache Builder."

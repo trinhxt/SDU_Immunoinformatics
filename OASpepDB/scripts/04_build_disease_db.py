@@ -571,15 +571,16 @@ def process_single_partition(
 # ------------------------------------------------------------------------------
 def main():
     script_dir = Path(__file__).resolve().parent
-    default_meta = str((script_dir.parent / "Data" / "OAS_metadata.csv").resolve())
-    default_neg_ref = str((script_dir.parent / "Data" / "negative_human_reference_peptides.parquet").resolve())
+    data_dir_name = "data" if (script_dir.parent / "data").is_dir() else "Data"
+    default_meta = str((script_dir.parent / data_dir_name / "OAS_metadata.csv").resolve())
+    default_neg_ref = str((script_dir.parent / data_dir_name / "negative_human_reference_peptides.parquet").resolve())
 
     # Dynamically select default paths
     candidate_data = Path(r"D:\OAS\unpaired\download")
-    default_data_dir = str(candidate_data) if candidate_data.is_dir() else str((script_dir.parent / "Data" / "raw").resolve())
+    default_data_dir = str(candidate_data) if candidate_data.is_dir() else str((script_dir.parent / data_dir_name / "raw").resolve())
 
     candidate_cache = Path(r"D:\OAS\unpaired\cache\healthy_cdr3_cache.parquet")
-    default_healthy = str(candidate_cache) if candidate_cache.is_file() else str((script_dir.parent / "Data" / "healthy_cdr3_cache.parquet").resolve())
+    default_healthy = str(candidate_cache) if candidate_cache.is_file() else str((script_dir.parent / data_dir_name / "healthy_cdr3_cache.parquet").resolve())
 
     candidate_out = Path(r"D:\OAS\unpaired\CDR3_db")
     default_out_dir = str(candidate_out) if candidate_out.is_dir() else str((script_dir.parent / "CDR3_db").resolve())

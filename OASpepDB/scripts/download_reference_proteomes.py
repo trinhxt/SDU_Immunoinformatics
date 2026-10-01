@@ -123,7 +123,8 @@ def download_and_decompress(url: str, dest_path: Path, is_gzip: bool, approx_mb:
 
 def main():
     script_dir = Path(__file__).resolve().parent
-    default_out_dir = (script_dir.parent / "Data").resolve()
+    data_dir_name = "data" if (script_dir.parent / "data").is_dir() else "Data"
+    default_out_dir = (script_dir.parent / data_dir_name).resolve()
 
     parser = argparse.ArgumentParser(
         description="OASpepDB: Automated Reference Proteome Downloader for Step 03 & FASTA Export."

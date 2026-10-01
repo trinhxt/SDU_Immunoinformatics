@@ -28,19 +28,19 @@ jobs:
 
       - name: Compile Python Scripts (Syntax Check)
         run: |
-          python -m py_compile OASpepDB/Scripts/01_download_OAS.py
-          python -m py_compile OASpepDB/Scripts/02_build_healthy_cdr3_cache.py
-          python -m py_compile OASpepDB/Scripts/04_build_disease_db.py
-          python -m py_compile OASpepDB/Scripts/05_fetch_ncbi_entrapment.py
-          python -m py_compile OASpepDB/Scripts/download_reference_proteomes.py
+          python -m py_compile OASpepDB/scripts/01_download_OAS.py
+          python -m py_compile OASpepDB/scripts/02_build_healthy_cdr3_cache.py
+          python -m py_compile OASpepDB/scripts/04_build_disease_db.py
+          python -m py_compile OASpepDB/scripts/05_fetch_ncbi_entrapment.py
+          python -m py_compile OASpepDB/scripts/download_reference_proteomes.py
 
       - name: Validate CLI Argument Parsing
         run: |
-          python OASpepDB/Scripts/01_download_OAS.py --help
-          python OASpepDB/Scripts/02_build_healthy_cdr3_cache.py --help
-          python OASpepDB/Scripts/04_build_disease_db.py --help
-          python OASpepDB/Scripts/05_fetch_ncbi_entrapment.py --help
-          python OASpepDB/Scripts/download_reference_proteomes.py --help
+          python OASpepDB/scripts/01_download_OAS.py --help
+          python OASpepDB/scripts/02_build_healthy_cdr3_cache.py --help
+          python OASpepDB/scripts/04_build_disease_db.py --help
+          python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --help
+          python OASpepDB/scripts/download_reference_proteomes.py --help
 
   r-syntax-validation:
     name: R Code Syntax & Parser Verification
@@ -57,5 +57,5 @@ jobs:
       - name: Parse R Scripts
         run: |
           Rscript -e "parse('OASpepDB/DBquery.R'); cat('Parsed DBquery.R successfully!\n')"
-          Rscript -e "parse('OASpepDB/Scripts/03_insilico_digest.R'); cat('Parsed 03_insilico_digest.R successfully!\n')"
-          Rscript -e "parse('OASpepDB/Scripts/generate_unified_alluvial_svg.R'); cat('Parsed generate_unified_alluvial_svg.R successfully!\n')"
+          Rscript -e "parse('OASpepDB/scripts/03_insilico_digest.R'); cat('Parsed 03_insilico_digest.R successfully!\n')"
+          Rscript -e "parse('OASpepDB/scripts/generate_unified_alluvial_svg.R'); cat('Parsed generate_unified_alluvial_svg.R successfully!\n')"
