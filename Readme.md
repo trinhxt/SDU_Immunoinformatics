@@ -18,30 +18,44 @@ flowchart LR
 
 ## 2. How to use this database
 
-Depending on your objective, choose one of the paths below:
+For proteomics researchers who want to search, explore, and export search-ready databases across **all 25 disease cohorts (65.5 million peptides)** without needing to recompute from raw NGS reads:
 
-```mermaid
-graph TD
-    Start([What do you want to do?]) --> ChoiceA["Option A: Fast Reviewer Test<br/>(Verify code in 5s)"]
-    Start --> ChoiceB["Option B: Proteomics Research<br/>(Use Full 65.5M Database)"]
-    Start --> ChoiceC["Option C: Build from Scratch<br/>(Recompute all 14,433 studies)"]
-    
-    ChoiceA --> ActA["Run verify_reproducibility.R<br/>-> 1-click launch DBquery"]
-    ChoiceB --> ActB["Download CDR3_db from Zenodo<br/>-> 1-click launch DBquery"]
-    ChoiceC --> ActC["Run Steps 01 to 05 scripts<br/>(Requires 32GB+ RAM)"]
-```
+### Step 1: Download the Pre-compiled Database from Zenodo
+Download the complete partitioned database archive from **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*, ~18 GB compressed Parquet):
+1. Extract the downloaded `CDR3_db` archive directly into the repository root as `CDR3_db/` (or place it at any custom path, e.g., `D:/OAS/unpaired/CDR3_db`).
 
-### Option A: Instant Demo & Reproducibility Check (Recommended for Reviewers, ~5s)
-Verify the entire pipeline end-to-end from scratch ($0) with 8 curated repertoires (~15 KB total):
+### Step 2: Launch `DBquery.R`
+Launch the standalone web application using the 1-click launcher for your operating system:
+* **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`
+* **Linux**: Run `bash OASpepDB/DBquery-Linux.sh`
+* **macOS**: Double-click `OASpepDB/DBquery-Mac.command`
+* **Or via R command**: `Rscript -e "shiny::runApp('OASpepDB/DBquery.R', launch.browser = TRUE)"`
+
+*(If you unzipped the database into a custom folder, simply click the **"Load DB"** button in the app interface to select your directory).*
+
+### Step 3: Explore and Export Data for Proteomics Analysis
+* **Cohort Stratification Dashboard**: Filter by disease, isotype (IgG, IgA, IgM, IgE, Light), tissue source (PBMC, Tonsil, Spleen), and minimum patient sharing ($N \ge 1, 2, 3, 5$) to isolate high-confidence public antibody clonotypes.
+* **Calibrated Proteomics Export**: Click **"Download FASTA"** to generate `OAS_<Disease>_<Date>.fasta` ready for search engines (FragPipe, MaxQuant, Comet, Mascot). The exported file automatically integrates minimal-flank micro-cassettes, common laboratory contaminants ([cRAP](https://www.thegpm.org/crap/)), and auto-scaled ~1% non-human Camelid VHH entrapment controls ($I \rightarrow L$ converted) for empirical false discovery rate (FDR) validation.
+* **Reverse Peptide Lookup**: Paste experimental tryptic peptides identified by mass spectrometry to instantly reveal their matching clonotypes, disease specificity, isotype, and patient recurrence.
+
+---
+
+## 3. How to reproduce this database
+
+If you want to reproduce the database construction from raw repertoire data, choose between the lightweight demo pipeline and the full-scale production build:
+
+### Option A: Reproduce Demo Database (Recommended for Reviewers, ~5 seconds)
+Execute the complete end-to-end pipeline from scratch ($0) using 8 curated OAS repertoires (~15 KB total) covering Healthy controls and 3 disease cohorts (CLL, COVID-19, HIV):
+
 ```bash
 # 1. Clone repository
 git clone https://github.com/SDU-Immunoinformatics/SDU_Immunoinformatics.git
 cd SDU_Immunoinformatics
 
-# 2. Run automated self-check (downloads demo data, builds DB, tests DuckDB)
+# 2. Run automated zero-state verification
 Rscript OASpepDB/scripts/verify_reproducibility.R
 
-# 3. Launch interactive web app
+# 3. Launch Web App to inspect generated demo cohorts
 # Windows: Double-click OASpepDB/DBquery-Windows.bat
 # Linux:   bash OASpepDB/DBquery-Linux.sh
 # macOS:   bash OASpepDB/DBquery-Mac.command
@@ -49,45 +63,40 @@ Rscript OASpepDB/scripts/verify_reproducibility.R
 
 ---
 
-### Option B: Use Full Pre-compiled Database (Recommended for Proteomics Researchers)
-If you want to immediately query, analyze, and export search-ready FASTA databases across the entire **65.5 million peptides (all 25 cohorts)** without spending hours downloading and re-computing:
+### Option B: Reproduce Full Production Database (All 14,433 OAS Repertoires)
+To re-process all 14,433 unpaired human repertoire datasets from raw streams across all 25 disease cohorts (requires $\ge 32$ GB RAM, 8–16 CPU cores, and $\ge 200$ GB SSD space):
 
-1. **Download the pre-compiled database** from **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*, ~18 GB compressed).
-2. **Extract the archive** to the repository root as `CDR3_db/` (or place it at `D:/OAS/unpaired/CDR3_db`).
-3. **Launch the Web App**:
-   - **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`
-   - **Linux**: `bash OASpepDB/DBquery-Linux.sh`
-   - **macOS**: `bash OASpepDB/DBquery-Mac.command`
-   *(Or click the **"Load DB"** button inside the app to select any custom folder where you unzipped the database).*
-
----
-
-### Option C: Recompute Full Database from Scratch (For Developers / HPC)
-To re-process all 14,433 OAS studies from raw FASTQ/CSV streams on your own workstation or cluster:
 ```bash
+# Prerequisites
 pip install -r requirements.txt
-python OASpepDB/scripts/01_download_OAS.py --sh OASpepDB/data/bulk_download_human_unpaired.sh --out-dir OAS_raw --threads 8
-python OASpepDB/scripts/02_build_healthy_cdr3_cache.py --metadata OASpepDB/data/OAS_metadata.csv --data-dir OAS_raw --out-parquet CDR3_db/healthy_cdr3_cache.parquet --workers 16
+R -e "install.packages(c('shiny','bslib','DT','duckdb','DBI','arrow','ggplot2','plotly','dplyr','htmlwidgets','zip'), repos='https://cloud.r-project.org')"
+
+# Step 01: Stream & Trim all 14,433 OAS repertoires
+python OASpepDB/scripts/01_download_OAS.py \
+    --sh OASpepDB/data/bulk_download_human_unpaired.sh \
+    --out-dir OAS_raw --threads 8
+
+# Step 02: Build Tier-1 Healthy Control Cache (8,089 healthy repertoires)
+python OASpepDB/scripts/02_build_healthy_cdr3_cache.py \
+    --metadata OASpepDB/data/OAS_metadata.csv \
+    --data-dir OAS_raw \
+    --out-parquet CDR3_db/healthy_cdr3_cache.parquet --workers 16
+
+# Step 03: Human Reference Proteome Digestion (Tier-2 & Tier-3 Subtraction)
 python OASpepDB/scripts/download_reference_proteomes.py
 Rscript OASpepDB/scripts/03_insilico_digest.R
-python OASpepDB/scripts/04_build_disease_db.py --metadata OASpepDB/data/OAS_metadata.csv --data-dir OAS_raw --healthy-cache CDR3_db/healthy_cdr3_cache.parquet --negative-ref OASpepDB/data/negative_human_reference_peptides.parquet --out-dir CDR3_db --workers 8
+
+# Step 04: Build 4-Tier Hive Disease-Exclusive Parquet Database
+python OASpepDB/scripts/04_build_disease_db.py \
+    --metadata OASpepDB/data/OAS_metadata.csv \
+    --data-dir OAS_raw \
+    --healthy-cache CDR3_db/healthy_cdr3_cache.parquet \
+    --negative-ref OASpepDB/data/negative_human_reference_peptides.parquet \
+    --out-dir CDR3_db --workers 8
+
+# Step 05: Harvest Camelid VHH Entrapment Controls
 python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 ```
-
----
-
-## 3. Interactive Web Application (`DBquery.R`)
-
-The built-in web application connects an in-memory **DuckDB OLAP engine** to the Hive-partitioned Parquet database for sub-second exploration and export:
-
-1. **Cohort Stratification Dashboard**:
-   - Interactive **Alluvial diagram** visualizing clonal flow across clinical categories, cohorts, tissue sources (PBMC, Tonsil, Spleen), B-cell types (Memory, Naive, Plasma), and isotypes (IgG, IgA, IgM, IgE, Light).
-   - **Clonal Stringency Filters**: Threshold by minimum patient sharing ($N \ge 1, 2, 3, 5$) to identify convergent public antibodies, and minimum read depth ($Redundancy \ge 1, 5, 10, 50$).
-2. **Search-Ready Proteomics Export**:
-   - Exports `OAS_<Disease>_<Date>.fasta` containing minimal-flank micro-cassettes, common laboratory contaminants ([cRAP](https://www.thegpm.org/crap/)), and auto-scaled ~1% non-human Camelid VHH entrapment controls ($I \rightarrow L$ converted) for empirical target-decoy false discovery rate (FDR) validation.
-   - Also exports analysis-ready `.parquet` tables and `.txt` query audit manifests.
-3. **Reverse Peptide Lookup**:
-   - Paste any identified experimental tryptic peptide sequence (e.g. from FragPipe, MaxQuant, or Mascot) to instantly identify its parent clonotype, disease specificity, isotype, and patient recurrence.
 
 ---
 
