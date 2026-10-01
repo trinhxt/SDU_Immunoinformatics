@@ -16,6 +16,8 @@ __pycache__/
 [Dd]ata/*
 **/[Dd]ata/*
 OAS_full/
+OAS_raw/
+CDR3_db/
 DAT-DB-webapp/pepDB
 DAT-DB-webapp/rsconnect
 Archived/
@@ -29,7 +31,6 @@ Archived/
 
 # Proteomics, genomics, and database large files
 *.parquet
-!**/demo_CDR3_db/**
 *.duckdb
 *.duckdb.wal
 *.duckdb.tmp

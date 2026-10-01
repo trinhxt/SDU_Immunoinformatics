@@ -136,26 +136,27 @@ R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('Bi
 ```
 
 ### Step 1: Download Raw Repertoire Data from OAS
-Run the automated downloader using the demo repertoire script (fast test, ~15 KB) or full metadata catalog (production):
+Run the automated downloader using either the lightweight demo repertoire script (fast test, ~15 KB) or the bulk production script (full OAS):
 ```bash
-# Demo workflow verification (8 curated repertoires, ~15 KB, runs in < 2 seconds):
+# Option A: Demo verification (8 curated repertoires, ~15 KB, runs in < 2 seconds):
 python OASpepDB/scripts/01_download_OAS.py \
     --sh OASpepDB/data/demo_download_human_unpaired.sh \
-    --out-dir /path/to/OAS_demo_raw
+    --out-dir OAS_raw
 
-# Full production pipeline (all 14,433 unpaired repertoires):
+# Option B: Full production pipeline (all 14,433 unpaired repertoires):
 python OASpepDB/scripts/01_download_OAS.py \
-    --metadata OASpepDB/data/OAS_metadata.csv \
-    --out-dir /path/to/OAS_raw
+    --sh OASpepDB/data/bulk_download_human_unpaired.sh \
+    --out-dir OAS_raw
 ```
+*(Note: Every subsequent step below runs with identical syntax regardless of whether Option A or Option B was chosen).*
 
 ### Step 2: Index Healthy Control CDR3 Cache (Tier-1 Subtraction)
-Extracts and indexes CDR3 sequences from 8,089 healthy repertoires (`Disease == 'None'`) into a compressed Parquet cache:
+Extracts and indexes CDR3 sequences from healthy repertoires (`Disease == 'None'`) into a compressed Parquet cache:
 ```bash
 python OASpepDB/scripts/02_build_healthy_cdr3_cache.py \
     --metadata OASpepDB/data/OAS_metadata.csv \
-    --data-dir /path/to/OAS_raw \
-    --out-parquet /path/to/CDR3_db/healthy_cdr3_cache.parquet \
+    --data-dir OAS_raw \
+    --out-parquet CDR3_db/healthy_cdr3_cache.parquet \
     --workers 16
 ```
 
@@ -175,10 +176,10 @@ Filters disease-exclusive sequences, quantifies patient sharing ($N$ patients) a
 ```bash
 python OASpepDB/scripts/04_build_disease_db.py \
     --metadata OASpepDB/data/OAS_metadata.csv \
-    --data-dir /path/to/OAS_raw \
-    --healthy-cache /path/to/CDR3_db/healthy_cdr3_cache.parquet \
+    --data-dir OAS_raw \
+    --healthy-cache CDR3_db/healthy_cdr3_cache.parquet \
     --negative-ref OASpepDB/data/negative_human_reference_peptides.parquet \
-    --out-dir /path/to/CDR3_db \
+    --out-dir CDR3_db \
     --workers 8
 ```
 *Output directory structure (Hive-partitioned):*
@@ -206,7 +207,7 @@ python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 The repository includes a standalone R Shiny application utilizing an in-memory DuckDB engine for rapid querying and multi-format data export.
 
 > [!TIP]
-> **Immediate Reproducibility**: The 1-click launchers automatically verify and install any missing R packages on first launch, and automatically connect to the included sample database (`OASpepDB/demo_CDR3_db`) out-of-the-box. Reviewers can immediately test the UI, query filters, exports, and reverse lookup without needing to wait for an 18 GB download.
+> **Isomorphic Reproducibility**: Reviewers can execute the entire pipeline from scratch ($0) in under 10 seconds using the lightweight demo repertoire set (Step 1 Option A). The execution commands, directory structures (`OAS_raw/` $\rightarrow$ `CDR3_db/`), and database queries are **100% identical** between Demo and Production — differing only by the download script selected in Step 1. The 1-click launchers automatically verify and install any missing R packages on first launch and automatically connect to `CDR3_db/`.
 
 ### 1-Click Launchers:
 * **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`

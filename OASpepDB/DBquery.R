@@ -71,8 +71,6 @@ detect_default_db_root <- function() {
     file.path(getwd(), "CDR3_db"),
     file.path(APP_DIR, "CDR3_db"),
     file.path(dirname(APP_DIR), "CDR3_db"),
-    file.path(APP_DIR, "demo_CDR3_db"),
-    file.path(dirname(APP_DIR), "demo_CDR3_db"),
     "C:/OAS/unpaired/CDR3_db"
   )
   for (cand in candidates) {
@@ -83,20 +81,6 @@ detect_default_db_root <- function() {
       }
     }
   }
-
-  # If no candidate DB found, auto-generate lightweight demo database
-  gen_script <- file.path(APP_DIR, "scripts", "generate_demo_db.R")
-  if (!file.exists(gen_script)) {
-    gen_script <- file.path(APP_DIR, "Scripts", "generate_demo_db.R")
-  }
-  if (file.exists(gen_script)) {
-    tryCatch({
-      source(gen_script, local = TRUE)
-      demo_path <- file.path(APP_DIR, "demo_CDR3_db")
-      if (dir.exists(demo_path)) return(normalizePath(demo_path, winslash = "/"))
-    }, error = function(e) NULL)
-  }
-
   return("")
 }
 
@@ -2595,7 +2579,7 @@ server <- function(input, output, session) {
           Redundancy,
           sequence_alignment_aa AS Antibody_sequence,
           Data_file
-        FROM read_parquet('%s/**/*.parquet', hive_partitioning=true)
+        FROM read_parquet('%s/Disease=*/**/*.parquet', hive_partitioning=true)
         WHERE %s
         ORDER BY N_Patients DESC, Redundancy DESC
         LIMIT 500;

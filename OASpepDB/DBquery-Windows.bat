@@ -47,8 +47,8 @@ pause
 exit /b 1
 
 :CHECK_DEPS
-echo Initializing OASpepDB environment...
-"%RSCRIPT_BIN%" -e "if (!requireNamespace('shiny', quietly = TRUE)) { message('Installing Shiny framework...'); install.packages('shiny', repos = 'https://cloud.r-project.org') }"
+echo Checking required R packages...
+"%RSCRIPT_BIN%" -e "req <- c('shiny','bslib','DT','duckdb','DBI','arrow','ggplot2','plotly','dplyr','htmlwidgets','zip'); missing <- req[!req %in% installed.packages()[,'Package']]; if (length(missing) > 0) { message('Installing missing R packages: ', paste(missing, collapse=', ')); install.packages(missing, repos='https://cloud.r-project.org') }"
 
 :RUN_APP
 echo Starting Shiny server and opening web browser...

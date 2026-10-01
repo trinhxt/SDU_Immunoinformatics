@@ -153,11 +153,11 @@ def trim_file(raw_path: str, final_path: str, filename: str) -> tuple:
                         if not fwr3 or not cdr3 or not fwr4:
                             continue
 
-                        # Minimum length checks
-                        if len(fwr3) < 2 or len(fwr4) < 2 or len(cdr3) < 3:
+                        # Minimum length checks (matching downstream Step 4 requirements)
+                        if len(fwr3) < 20 or len(fwr4) < 5 or len(cdr3) < 5:
                             continue
 
-                        fr3_tail = fwr3[-2:]
+                        fr3_tail = fwr3
                         v_call = row[idx_vc].strip() if idx_vc != -1 and len(row) > idx_vc else ""
                         d_call = row[idx_dc].strip() if idx_dc != -1 and len(row) > idx_dc else ""
                         j_call = row[idx_jc].strip() if idx_jc != -1 and len(row) > idx_jc else ""
