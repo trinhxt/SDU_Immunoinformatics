@@ -1,30 +1,56 @@
-# OASpepDB: Human Disease CDR3 Antibody Peptides Database for Proteomics
+# OASpepDB: Human Disease CDR3 Antibody Peptides Database
 
 A curated repository of **65,510,795** non-redundant, **disease-associated antibody CDR3 peptides** across **25 human disease cohorts**, engineered specifically for bottom-up immunoproteomics and liquid chromatography–tandem mass spectrometry (LC-MS/MS) database searching.
 
-### 1. How to use this database
+**Prerequisites:** OS: Windows, Linux, macOS | Python >= 3.9 | R >= 4.2
 
-For proteomics researchers who want to search, explore, and export search-ready databases across **all 25 disease cohorts (65.5 million peptides)** without needing to recompute from raw NGS reads:
+#### 1. Quick Start (Test Run in ~5 Seconds)
 
-**Step 1: Download the Pre-compiled Database from Zenodo**  
-Download the complete partitioned database archive from **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*):
-1. Extract the downloaded `CDR3_db` archive directly into the repository root as `CDR3_db/` (or place it at any custom path, e.g., `D:/OAS/unpaired/CDR3_db`).
+For reviewers and first-time users who want to verify the pipeline from scratch ($0) using 8 curated demo repertoires (~15 KB total):
 
-**Step 2: Launch `DBquery.R`**  
-Launch the standalone web application using the 1-click launcher for your operating system:
+```bash
+# 1. Clone repository
+git clone https://github.com/SDU-Immunoinformatics/SDU_Immunoinformatics.git
+cd SDU_Immunoinformatics
+
+# 2. Run automated zero-state verification
+Rscript OASpepDB/scripts/verify_reproducibility.R
+```
+
+**Expected Output:**
+```text
+[1/5] Verifying R dependencies... OK: All 11 required packages are installed.
+[2/5] Loading DBquery.R environment... OK: DBquery.R parsed and loaded successfully.
+[3/5] Verifying database availability... Connected to database with 3 cohorts (CLL, COVID-19, HIV).
+[4/5] Verifying DuckDB queries on database... OK: Query returned 5 partition rows.
+[5/5] Verifying reference FASTA assets... OK: cRAP and Entrapment reference files resolved.
+SUCCESS: OASpepDB is 100% reproducible and ready to run!
+```
+
+**Launch the Interactive Web App:**
 * **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`
 * **Linux**: Run `bash OASpepDB/DBquery-Linux.sh`
 * **macOS**: Double-click `OASpepDB/DBquery-Mac.command`
 * **Or via R command**: `Rscript -e "shiny::runApp('OASpepDB/DBquery.R', launch.browser = TRUE)"`
 
-*(If you unzipped the database into a custom folder, simply click the **"Load DB"** button in the app interface to select your directory).*
+#### 2. How to Use this Database (Proteomics Workflow)
 
-**Step 3: Explore and Export Data for Proteomics Analysis**  
+For proteomics researchers who want to explore, query, and export search-ready databases across **all 25 disease cohorts (65.5 million peptides)** without needing to recompute from raw NGS reads:
+
+**Step 1: Download Pre-compiled Database from Zenodo**  
+Download the complete partitioned database archive from **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*):
+1. Extract the downloaded `CDR3_db` archive directly into the repository root as `CDR3_db/` (or place it at any custom path, e.g., `D:/OAS/unpaired/CDR3_db`).
+
+**Step 2: Launch `DBquery.R`**  
+Launch the web application using the 1-click launcher for your OS (`.bat`, `.sh`, or `.command`).  
+*(If you extracted the database into a custom directory, simply click the **"Load DB"** button in the app interface to select your folder).*
+
+**Step 3: Explore and Export Data for LC-MS/MS Searching**  
 * **Cohort Stratification Dashboard**: Filter by disease, isotype (IgG, IgA, IgM, IgE, Light), tissue source (PBMC, Tonsil, Spleen), and minimum patient sharing ($N \ge 1, 2, 3, 5$) to isolate high-confidence public antibody clonotypes.
 * **Calibrated Proteomics Export**: Click **"Download FASTA"** to generate `OAS_<Disease>_<Date>.fasta` ready for search engines (FragPipe, MaxQuant, Comet, Mascot). The exported file automatically integrates minimal-flank micro-cassettes, common laboratory contaminants ([cRAP](https://www.thegpm.org/crap/)), and auto-scaled ~1% non-human Camelid VHH entrapment controls ($I \rightarrow L$ converted) for empirical false discovery rate (FDR) validation.
 * **Reverse Peptide Lookup**: Paste experimental tryptic peptides identified by mass spectrometry to instantly reveal their matching clonotypes, disease specificity, isotype, and patient recurrence.
 
-### 2. How OASpepDB was built and how to reproduce it
+#### 3. How OASpepDB Was Built & Full Reproduction
 
 **Workflow Architecture**
 ```mermaid
@@ -35,28 +61,11 @@ flowchart LR
     D --> E["<b>5. MS/MS Search Engines</b><br/>Calibrated FASTA (~1% VHH FDR)<br/>FragPipe, MaxQuant, Comet, SEQUEST"]
 ```
 
-**Option A: Reproduce Demo Database (Recommended for Reviewers, ~5 seconds)**  
-Execute the complete end-to-end pipeline from scratch ($0) using 8 curated OAS repertoires (~15 KB total) covering Healthy controls and 3 disease cohorts (CLL, COVID-19, HIV):
-
-```bash
-# 1. Clone repository
-git clone https://github.com/SDU-Immunoinformatics/SDU_Immunoinformatics.git
-cd SDU_Immunoinformatics
-
-# 2. Run automated zero-state verification
-Rscript OASpepDB/scripts/verify_reproducibility.R
-
-# 3. Launch Web App to inspect generated demo cohorts
-# Windows: Double-click OASpepDB/DBquery-Windows.bat
-# Linux:   bash OASpepDB/DBquery-Linux.sh
-# macOS:   bash OASpepDB/DBquery-Mac.command
-```
-
-**Option B: Reproduce Full Production Database (All 14,433 OAS Repertoires)**  
+**Reproduce Full Production Database from Scratch (All 14,433 OAS Repertoires)**  
 To re-process all 14,433 unpaired human repertoire datasets from raw streams across all 25 disease cohorts (requires $\ge 32$ GB RAM, 8–16 CPU cores, and $\ge 200$ GB SSD space):
 
 ```bash
-# Prerequisites
+# Prerequisites installation
 pip install -r requirements.txt
 R -e "install.packages(c('shiny','bslib','DT','duckdb','DBI','arrow','ggplot2','plotly','dplyr','htmlwidgets','zip'), repos='https://cloud.r-project.org')"
 
@@ -87,8 +96,9 @@ python OASpepDB/scripts/04_build_disease_db.py \
 python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 ```
 
-### 3. Data Availability
+#### 4. Data Availability & License
 
 * **Pre-compiled Parquet Database**: Archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*).
 * **Reference Annotations & Catalogs**: Available under [`OASpepDB/data/`](OASpepDB/data/).
 * **Raw Repertoire Data**: Publicly hosted by the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/).
+* **License**: This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
