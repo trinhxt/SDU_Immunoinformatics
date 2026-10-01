@@ -2,8 +2,6 @@
 
 A curated repository of **65,510,795** non-redundant, **disease-associated antibody CDR3 peptides** across **25 human disease cohorts**, engineered specifically for bottom-up immunoproteomics and liquid chromatography–tandem mass spectrometry (LC-MS/MS) database searching.
 
----
-
 ## 1. How to use this database
 
 For proteomics researchers who want to search, explore, and export search-ready databases across **all 25 disease cohorts (65.5 million peptides)** without needing to recompute from raw NGS reads:
@@ -25,8 +23,6 @@ Launch the standalone web application using the 1-click launcher for your operat
 * **Cohort Stratification Dashboard**: Filter by disease, isotype (IgG, IgA, IgM, IgE, Light), tissue source (PBMC, Tonsil, Spleen), and minimum patient sharing ($N \ge 1, 2, 3, 5$) to isolate high-confidence public antibody clonotypes.
 * **Calibrated Proteomics Export**: Click **"Download FASTA"** to generate `OAS_<Disease>_<Date>.fasta` ready for search engines (FragPipe, MaxQuant, Comet, Mascot). The exported file automatically integrates minimal-flank micro-cassettes, common laboratory contaminants ([cRAP](https://www.thegpm.org/crap/)), and auto-scaled ~1% non-human Camelid VHH entrapment controls ($I \rightarrow L$ converted) for empirical false discovery rate (FDR) validation.
 * **Reverse Peptide Lookup**: Paste experimental tryptic peptides identified by mass spectrometry to instantly reveal their matching clonotypes, disease specificity, isotype, and patient recurrence.
-
----
 
 ## 2. How OASpepDB was built and how to reproduce it
 
@@ -90,8 +86,6 @@ python OASpepDB/scripts/04_build_disease_db.py \
 # Step 05: Harvest Camelid VHH Entrapment Controls
 python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 ```
-
----
 
 ## 3. Data Availability
 
