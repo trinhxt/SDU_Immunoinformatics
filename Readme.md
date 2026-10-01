@@ -38,8 +38,7 @@ SUCCESS: OASpepDB is 100% reproducible and ready to run!
 For proteomics researchers who want to explore, query, and export search-ready databases across **all 25 disease cohorts (65.5 million peptides)** without needing to recompute from raw NGS reads:
 
 **Step 1: Download Pre-compiled Database from Zenodo**  
-Download the complete partitioned database archive from **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*):
-1. Extract the downloaded `CDR3_db` archive directly into the repository root as `CDR3_db/` (or place it at any custom path, e.g., `D:/OAS/unpaired/CDR3_db`).
+Download the complete partitioned database archive from **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*). Extract the downloaded `CDR3_db` archive directly into the repository root as `CDR3_db/` (or place it at any custom path, e.g., `D:/OAS/unpaired/CDR3_db`).
 
 **Step 2: Launch `DBquery.R`**  
 Launch the web application using the 1-click launcher for your OS (`.bat`, `.sh`, or `.command`).  
