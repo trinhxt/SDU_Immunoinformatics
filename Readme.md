@@ -1,4 +1,4 @@
-# OASpepDB: Human Disease CDR3 Antibody Peptides Database
+# OASpepDB: Human Disease CDR3 Antibody Peptides Database for Proteomics
 
 A curated repository of **65,510,795** non-redundant, **disease-associated antibody CDR3 peptides** across **25 human disease cohorts**, engineered specifically for bottom-up immunoproteomics and liquid chromatography–tandem mass spectrometry (LC-MS/MS) database searching.
 
