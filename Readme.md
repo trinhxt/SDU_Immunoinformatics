@@ -2,7 +2,7 @@
 
 A curated repository of **65,510,795** non-redundant, **disease-associated antibody CDR3 peptides** across **25 human disease cohorts**, engineered specifically for bottom-up immunoproteomics and liquid chromatography–tandem mass spectrometry (LC-MS/MS) database searching.
 
-#### 1. How to use this database
+### 1. How to use this database
 
 For proteomics researchers who want to search, explore, and export search-ready databases across **all 25 disease cohorts (65.5 million peptides)** without needing to recompute from raw NGS reads:
 
@@ -24,7 +24,7 @@ Launch the standalone web application using the 1-click launcher for your operat
 * **Calibrated Proteomics Export**: Click **"Download FASTA"** to generate `OAS_<Disease>_<Date>.fasta` ready for search engines (FragPipe, MaxQuant, Comet, Mascot). The exported file automatically integrates minimal-flank micro-cassettes, common laboratory contaminants ([cRAP](https://www.thegpm.org/crap/)), and auto-scaled ~1% non-human Camelid VHH entrapment controls ($I \rightarrow L$ converted) for empirical false discovery rate (FDR) validation.
 * **Reverse Peptide Lookup**: Paste experimental tryptic peptides identified by mass spectrometry to instantly reveal their matching clonotypes, disease specificity, isotype, and patient recurrence.
 
-#### 2. How OASpepDB was built and how to reproduce it
+### 2. How OASpepDB was built and how to reproduce it
 
 **Workflow Architecture**
 ```mermaid
@@ -87,7 +87,7 @@ python OASpepDB/scripts/04_build_disease_db.py \
 python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 ```
 
-#### 3. Data Availability
+### 3. Data Availability
 
 * **Pre-compiled Parquet Database**: Archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*).
 * **Reference Annotations & Catalogs**: Available under [`OASpepDB/data/`](OASpepDB/data/).
