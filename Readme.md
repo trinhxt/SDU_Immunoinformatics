@@ -4,19 +4,7 @@ A curated repository of **65,510,795** non-redundant, **disease-associated antib
 
 ---
 
-## 1. How OASpepDB was built
-
-```mermaid
-flowchart LR
-    A["<b>1. Raw Repertoires</b><br/>14,433 OAS Repertoires<br/>(2+ Billion NGS Reads)"] --> B["<b>2. 3-Tier Negative Filter</b><br/>• -8,089 Healthy Repertoires<br/>• -UniProt Swiss-Prot<br/>• -NCBI RefSeq (GRCh38)"]
-    B --> C["<b>3. OASpepDB (CDR3_db)</b><br/>65,510,795 Neo-Clonotypes<br/>4-Tier Hive Parquet (ZSTD-9)"]
-    C --> D["<b>4. Interactive Web Explorer</b><br/>DBquery.R (Shiny + DuckDB)<br/>• Patient convergence (N >= 1..5)<br/>• Reverse peptide lookup"]
-    D --> E["<b>5. MS/MS Search Engines</b><br/>Calibrated FASTA (~1% VHH FDR)<br/>FragPipe, MaxQuant, Comet, SEQUEST"]
-```
-
----
-
-## 2. How to use this database
+## 1. How to use this database
 
 For proteomics researchers who want to search, explore, and export search-ready databases across **all 25 disease cohorts (65.5 million peptides)** without needing to recompute from raw NGS reads:
 
@@ -40,9 +28,16 @@ Launch the standalone web application using the 1-click launcher for your operat
 
 ---
 
-## 3. How to reproduce this database
+## 2. How OASpepDB was built and how to reproduce it
 
-If you want to reproduce the database construction from raw repertoire data, choose between the lightweight demo pipeline and the full-scale production build:
+### Workflow Architecture
+```mermaid
+flowchart LR
+    A["<b>1. Raw Repertoires</b><br/>14,433 OAS Repertoires<br/>(2+ Billion NGS Reads)"] --> B["<b>2. 3-Tier Negative Filter</b><br/>• -8,089 Healthy Repertoires<br/>• -UniProt Swiss-Prot<br/>• -NCBI RefSeq (GRCh38)"]
+    B --> C["<b>3. OASpepDB (CDR3_db)</b><br/>65,510,795 Neo-Clonotypes<br/>4-Tier Hive Parquet (ZSTD-9)"]
+    C --> D["<b>4. Interactive Web Explorer</b><br/>DBquery.R (Shiny + DuckDB)<br/>• Patient convergence (N >= 1..5)<br/>• Reverse peptide lookup"]
+    D --> E["<b>5. MS/MS Search Engines</b><br/>Calibrated FASTA (~1% VHH FDR)<br/>FragPipe, MaxQuant, Comet, SEQUEST"]
+```
 
 ### Option A: Reproduce Demo Database (Recommended for Reviewers, ~5 seconds)
 Execute the complete end-to-end pipeline from scratch ($0) using 8 curated OAS repertoires (~15 KB total) covering Healthy controls and 3 disease cohorts (CLL, COVID-19, HIV):
@@ -60,8 +55,6 @@ Rscript OASpepDB/scripts/verify_reproducibility.R
 # Linux:   bash OASpepDB/DBquery-Linux.sh
 # macOS:   bash OASpepDB/DBquery-Mac.command
 ```
-
----
 
 ### Option B: Reproduce Full Production Database (All 14,433 OAS Repertoires)
 To re-process all 14,433 unpaired human repertoire datasets from raw streams across all 25 disease cohorts (requires $\ge 32$ GB RAM, 8–16 CPU cores, and $\ge 200$ GB SSD space):
@@ -100,7 +93,7 @@ python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
 
 ---
 
-## 4. Data Availability
+## 3. Data Availability
 
 * **Pre-compiled Parquet Database**: Archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*).
 * **Reference Annotations & Catalogs**: Available under [`OASpepDB/data/`](OASpepDB/data/).
