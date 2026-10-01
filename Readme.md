@@ -4,267 +4,213 @@
 [![R: >= 4.2](https://img.shields.io/badge/R-%3E%3D%204.2-276DC3.svg)](https://www.r-project.org/)
 [![Python: >= 3.9](https://img.shields.io/badge/Python-%3E%3D%203.9-3776AB.svg)](https://www.python.org/)
 [![Database: DuckDB & Parquet](https://img.shields.io/badge/Database-DuckDB%20%7C%20Parquet-FFF000.svg)](https://duckdb.org/)
+[![DOI: Zenodo](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.10561456-blue.svg)](https://doi.org/10.5281/zenodo.10561456)
 
-A curated repository of **65,510,795** non-redundant, **disease-exclusive antibody CDR3 peptides** across **25 human disease cohorts**, optimized for bottom-up immunoproteomics and liquid chromatography–tandem mass spectrometry (LC-MS/MS) database searching.
-
----
-
-## 1. Scientific Overview & Rationale
-
-Direct identification of circulating, disease-specific antibodies from patient biofluids (e.g., plasma, serum, cerebrospinal fluid) via bottom-up mass spectrometry requires sequence databases that capture hypervariable complementarity-determining regions (specifically CDR-H3). 
-
-Standard reference proteomes such as UniProtKB/Swiss-Prot contain fewer than 40,000 immunoglobulin entries, omitting somatic hypermutations and V(D)J combinatorial diversity. Conversely, searching raw next-generation sequencing repertoires (>2 billion reads) causes severe database expansion, prolonged search times, and uncalibrated false discovery rates.
-
-**OASpepDB** addresses this trade-off through a multi-tier negative subtraction and clonotype curation pipeline:
-
-1. **Repertoire Aggregation**: Ingestion of 14,433 unpaired human B-cell repertoire datasets from the [Observed Antibody Space (OAS)](https://opig.stats.ox.ac.uk/webapps/oas/).
-2. **Tier-1 Negative Subtraction (Healthy Repertoire Background)**: Identification and subtraction of all CDR3 sequences observed across **8,089 healthy control repertoires** to eliminate common germline and non-disease background antibodies.
-3. **Tier-2 & Tier-3 Negative Subtraction (Human Reference Proteomes)**: *In silico* tryptic digestion of UniProtKB/Swiss-Prot (canonical and isoforms) and NCBI RefSeq (GRCh38.p14) to purge any peptide fragments matching the human background proteome.
-4. **Disease-Exclusive Curation**: Retention of sequences unique to each of the 25 clinical conditions, with clonal sharing quantified across distinct patients ($N \ge 1$) and read depths.
-5. **Empirical FDR Control**: Integration of a calibrated ~1% non-human Camelid VHH entrapment library (NCBI GenBank) formatted with isobaric $I \rightarrow L$ substitution for target-decoy mass spectrometry validation.
+A curated repository of **65,510,795** non-redundant, **disease-exclusive antibody CDR3 peptides** across **25 human disease cohorts**, engineered specifically for bottom-up immunoproteomics and liquid chromatography–tandem mass spectrometry (LC-MS/MS) database searching.
 
 ---
 
-## 2. Repository Structure
+### Key Metrics at a Glance
 
-```text
-SDU_Immunoinformatics/
-├── .github/
-│   └── workflows/
-│       └── ci.yml                          # Continuous integration (syntax & CLI validation)
-├── OASpepDB/                               # Core application and data assets
-│   ├── DBquery.R                           # Interactive Shiny web application (DuckDB OLAP)
-│   ├── DBquery-Windows.bat                 # Launch script for Windows
-│   ├── DBquery-Mac.command                 # Launch script for macOS
-│   ├── DBquery-Linux.sh                    # Launch script for Linux
-│   ├── data/
-│   │   ├── OAS_metadata.csv                # Curated metadata catalog (14,433 studies)
-│   │   ├── cRAP.fasta                      # Common Repository of Adventitious Proteins
-│   │   ├── entrapment_cassettes.fasta      # Camelid VHH entrapment sequences for empirical FDR
-│   │   ├── demo_download_human_unpaired.sh # Lightweight demo download for reviewer verification (~15 KB)
-│   │   └── bulk_download_human_unpaired.sh # Full production bulk download script (14,433 studies)
-│   └── scripts/
-│       ├── 01_download_OAS.py              # Step 01: Parallel download of OAS repertoires
-│       ├── 02_build_healthy_cdr3_cache.py  # Step 02: Multi-threaded healthy CDR3 indexer
-│       ├── 03_insilico_digest.R            # Step 03: Human proteome in silico digestion
-│       ├── 04_build_disease_db.py          # Step 04: Disease-exclusive database builder
-│       ├── 05_fetch_ncbi_entrapment.py     # Step 05: Camelid VHH entrapment library generator
-│       ├── download_reference_proteomes.py # Automated fetch for UniProt & RefSeq proteomes
-│       └── generate_unified_alluvial_svg.R # Dynamic alluvial diagram generator
-├── Archived/                               # Prior versions, deprecated files, and notes
-├── .gitignore                              # Git exclusion rules for large data artifacts
-├── LICENSE                                 # MIT License
-└── Readme.md                               # Project documentation
-```
+| 25 Disease Cohorts | 65.5M Peptides | 3-Tier Negative Filter | Sub-0.05s Query Speed |
+| :---: | :---: | :---: | :---: |
+| COVID-19, CLL, HIV, SLE, Asthma, MS, Celiac... | Non-redundant CDR3 micro-cassettes | Healthy controls + Human Swiss-Prot/RefSeq subtracted | In-memory DuckDB OLAP on 4-tier Hive Parquet |
 
 ---
 
-## 3. Database Generation Pipeline
-
-To reproduce the database construction from raw repertoire data, execute the pipeline scripts sequentially. An interactive architecture map generated with Archify is available at [`OASpepDB/docs/pipeline-architecture.html`](OASpepDB/docs/pipeline-architecture.html).
-
-### Pipeline Workflow & Data Architecture
+## 1. How OASpepDB Works (Graphical Abstract)
 
 ```mermaid
-flowchart TD
-    subgraph S0["1. Data Sources & Reference Repositories"]
-        OAS["Observed Antibody Space (OAS)<br/>14,433 Unpaired Human Repertoires"]
-        META["Metadata Catalog<br/>OAS_metadata.csv (19 Columns)"]
-        PROT["Human Reference Proteomes<br/>UniProt Swiss-Prot + NCBI RefSeq"]
-        VHH["NCBI Entrez Protein<br/>Authentic Camelid VHH Records"]
-    end
-
-    subgraph S1["2. Automated Ingestion & Reference Retrieval"]
-        P1["01_download_OAS.py<br/>Parallel Repertoire Stream"]
-        P_FETCH["download_reference_proteomes.py<br/>Streaming Proteome Fetcher"]
-        P5["05_fetch_ncbi_entrapment.py<br/>Camelid VHH Harvester"]
-        RAW_H["8,089 Healthy Repertoires<br/>(Disease == 'None')"]
-        RAW_D["6,344 Disease Repertoires<br/>(25 Clinical Cohorts)"]
-    end
-
-    subgraph S2["3. Negative Subtraction Modeling"]
-        P2["02_build_healthy_cdr3_cache.py<br/>PyArrow C++ SIMD Deduplication"]
-        P3["03_insilico_digest.R<br/>Trypsin [KR](?!P) Keil Rule (0-2 Missed)"]
-        CACHE_H[("healthy_cdr3_cache.parquet<br/>294M Unique Healthy CDR3s")]
-        CACHE_P[("negative_ref_peptides.parquet<br/>2.88M Human Tryptic Peptides")]
-        LIB_VHH[("entrapment_cassettes.fasta<br/>Isobaric I->L VHH Controls")]
-    end
-
-    subgraph S3["4. Disease-Exclusive Database Construction"]
-        P4["04_build_disease_db.py<br/>Minimal-Flank Micro-Cassette Engine"]
-        DB[("CDR3_db (18 GB Hive Partitioned)<br/>65,510,795 Disease-Exclusive Peptides")]
-    end
-
-    subgraph S4["5. Interactive Exploration & MS/MS Search"]
-        APP["DBquery.R (Shiny Web Application)<br/>In-Memory DuckDB OLAP Engine"]
-        MS["Bottom-Up MS/MS Search Engines<br/>FragPipe, MaxQuant, Comet, SEQUEST"]
-    end
-
-    OAS --> P1
-    META --> P1
-    PROT --> P_FETCH
-    VHH --> P5
-
-    P1 --> RAW_H
-    P1 --> RAW_D
-    P_FETCH --> P3
-
-    RAW_H --> P2
-    P2 --> CACHE_H
-    P3 --> CACHE_P
-    P5 --> LIB_VHH
-
-    RAW_D --> P4
-    CACHE_H -.->|Tier-1 Healthy Filter| P4
-    CACHE_P -.->|Tier-2/3 Proteome Filter| P4
-    P4 --> DB
-
-    DB --> APP
-    LIB_VHH -.->|Calibrated ~1% Entrapment| APP
-    APP -->|Calibrated FASTA / Parquet| MS
-```
-
-### Prerequisites
-
-```bash
-# Python dependencies
-pip install -r requirements.txt
-
-# R dependencies (all 11 packages required by the Shiny app)
-R -e "install.packages(c('shiny', 'bslib', 'DT', 'duckdb', 'DBI', 'arrow', 'ggplot2', 'plotly', 'dplyr', 'htmlwidgets', 'zip'), repos='https://cloud.r-project.org')"
-R -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager'); BiocManager::install('Biostrings')"
-```
-
-### Step 1: Download Raw Repertoire Data from OAS
-Run the automated downloader using either the lightweight demo repertoire script (fast test, ~15 KB) or the bulk production script (full OAS):
-```bash
-# Option A: Demo verification (8 curated repertoires, ~15 KB, runs in < 2 seconds):
-python OASpepDB/scripts/01_download_OAS.py \
-    --sh OASpepDB/data/demo_download_human_unpaired.sh \
-    --out-dir OAS_raw
-
-# Option B: Full production pipeline (all 14,433 unpaired repertoires):
-python OASpepDB/scripts/01_download_OAS.py \
-    --sh OASpepDB/data/bulk_download_human_unpaired.sh \
-    --out-dir OAS_raw
-```
-*(Note: Every subsequent step below runs with identical syntax regardless of whether Option A or Option B was chosen).*
-
-### Step 2: Index Healthy Control CDR3 Cache (Tier-1 Subtraction)
-Extracts and indexes CDR3 sequences from healthy repertoires (`Disease == 'None'`) into a compressed Parquet cache:
-```bash
-python OASpepDB/scripts/02_build_healthy_cdr3_cache.py \
-    --metadata OASpepDB/data/OAS_metadata.csv \
-    --data-dir OAS_raw \
-    --out-parquet CDR3_db/healthy_cdr3_cache.parquet \
-    --workers 16
-```
-
-### Step 3: Digest Human Reference Proteomes (Tier-2 & Tier-3 Subtraction)
-Generates an *in silico* tryptic peptidome (Trypsin/P cleavage, 0–2 missed cleavages, peptide length 6–45 aa) from UniProtKB/Swiss-Prot and NCBI RefSeq:
-```bash
-# Automated streaming download of UniProt and NCBI RefSeq reference proteomes
-python OASpepDB/scripts/download_reference_proteomes.py
-
-# In silico tryptic digestion and negative index construction
-Rscript OASpepDB/scripts/03_insilico_digest.R
-```
-*Outputs: `OASpepDB/data/negative_human_reference_peptides.parquet` and `OASpepDB/data/negative_reference.duckdb`.*
-
-### Step 4: Construct Disease-Exclusive Hive Database
-Filters disease-exclusive sequences, quantifies patient sharing ($N$ patients) and read coverage, and partitions data by clinical cohort:
-```bash
-python OASpepDB/scripts/04_build_disease_db.py \
-    --metadata OASpepDB/data/OAS_metadata.csv \
-    --data-dir OAS_raw \
-    --healthy-cache CDR3_db/healthy_cdr3_cache.parquet \
-    --negative-ref OASpepDB/data/negative_human_reference_peptides.parquet \
-    --out-dir CDR3_db \
-    --workers 8
-```
-*Output directory structure (Hive-partitioned):*
-```text
-CDR3_db/
-├── Disease=COVID-19/
-│   └── BSource=PBMC/
-│       └── BType=Memory-B-Cells/
-│           └── Isotype=IGHG1/*.parquet
-└── Disease=HIV/...
-```
-
-### Step 5: Generate Camelid VHH Entrapment Library (Empirical FDR)
-Queries NCBI Entrez E-utilities for published Camelid VHH sequences, producing isobaric ($I \rightarrow L$) micro-cassettes for target-decoy empirical FDR calibration:
-```bash
-# Extract authentic Camelid VHH cassettes (default: 2,000; scale up with --target-count)
-python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
-```
-*Output: `OASpepDB/data/entrapment_cassettes.fasta`.*
-
----
-
-## 4. Running the Interactive Explorer
-
-The repository includes a standalone R Shiny application utilizing an in-memory DuckDB engine for rapid querying and multi-format data export.
-
-> [!TIP]
-> **Isomorphic Reproducibility**: Reviewers can execute the entire pipeline from scratch ($0) in under 10 seconds using the lightweight demo repertoire set (Step 1 Option A). The execution commands, directory structures (`OAS_raw/` $\rightarrow$ `CDR3_db/`), and database queries are **100% identical** between Demo and Production — differing only by the download script selected in Step 1. The 1-click launchers automatically verify and install any missing R packages on first launch and automatically connect to `CDR3_db/`.
-
-### 1-Click Launchers:
-* **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`
-* **macOS**: Double-click `OASpepDB/DBquery-Mac.command`
-* **Linux**: Run `bash OASpepDB/DBquery-Linux.sh`
-
-### Command Line / R Console:
-```r
-# From the repository root
-shiny::runApp("OASpepDB", launch.browser = TRUE, port = 8080)
-
-# Or within the OASpepDB directory
-setwd("OASpepDB")
-shiny::runApp("DBquery.R", launch.browser = TRUE, port = 8080)
+flowchart LR
+    A["<b>1. Raw Repertoires</b><br/>14,433 OAS Repertoires<br/>(2+ Billion NGS Reads)"] --> B["<b>2. 3-Tier Negative Filter</b><br/>• -8,089 Healthy Repertoires<br/>• -UniProt Swiss-Prot<br/>• -NCBI RefSeq (GRCh38)"]
+    B --> C["<b>3. OASpepDB (CDR3_db)</b><br/>65,510,795 Neo-Clonotypes<br/>4-Tier Hive Parquet (ZSTD-9)"]
+    C --> D["<b>4. Interactive Web Explorer</b><br/>DBquery.R (Shiny + DuckDB)<br/>• Patient convergence (N >= 1..5)<br/>• Reverse peptide lookup"]
+    D --> E["<b>5. MS/MS Search Engines</b><br/>Calibrated FASTA (~1% VHH FDR)<br/>FragPipe, MaxQuant, Comet, SEQUEST"]
 ```
 
 ---
 
-## 5. Web Application Features
+## 2. Quick Start: Choose Your Workflow
 
-1. **Query & Export (Cohort Stratification Dashboard)**:
-   - **Clinical Hierarchy Visualization**: Interactive alluvial diagram illustrating sequence distribution across 4 clinical domains, 25 disease cohorts, tissue sources, B-cell subsets, and heavy-chain isotypes.
-   - **Clonal Stringency Thresholds**:
-     - *Min Patients ($N \ge 1, 2, 3, 5$)*: Restricts results to convergent, multi-patient clonotypes.
-     - *Min Reads ($\ge 1, 5, 10, 50$)*: Filters low-abundance sequences to ensure robust sequencing evidence.
-   - **Export Formats**:
-     - `OAS_<Disease>_<Date>.fasta`: Search-ready database containing disease-exclusive CDR3 micro-cassettes, common laboratory contaminants (cRAP), and ~1% Camelid VHH entrapment controls ($I \rightarrow L$ converted).
-     - `OAS_<Disease>_<Date>.parquet`: Tabular dataset containing clonotype identifiers, patient counts, read metrics, full amino acid sequences, and source accessions.
-     - `OAS_<Disease>_<Date>.txt`: Audit manifest documenting applied filters and query metadata.
+Depending on your objective, choose one of the three paths below:
 
-2. **Reverse Lookup (Peptide-to-Clonotype Mapping)**:
-   - Queries identified experimental tryptic peptides against the complete 65.5-million sequence database via vectorized DuckDB SQL.
-   - Returns matching clonotypes, disease specificity, isotype classifications, complete CDR3 cassettes, and source study records.
+```mermaid
+graph TD
+    Start([What do you want to do?]) --> ChoiceA["A. Fast Reviewer Test<br/>(Verify code in 5s)"]
+    Start --> ChoiceB["B. Proteomics Research<br/>(Use Full 65.5M Database)"]
+    Start --> ChoiceC["C. Build from Scratch<br/>(Recompute all 14,433 studies)"]
+    
+    ChoiceA --> ActA["Run verify_reproducibility.R<br/>-> 1-click launch DBquery"]
+    ChoiceB --> ActB["Download CDR3_db from Zenodo<br/>-> 1-click launch DBquery"]
+    ChoiceC --> ActC["Run Steps 01 to 05 pipeline<br/>(Requires 32GB+ RAM)"]
+```
+
+### Option A: Instant Demo & Reproducibility Check (Recommended for Reviewers, ~5s)
+Verify the entire pipeline end-to-end from scratch ($0) with 8 curated repertoires (~15 KB total):
+```bash
+# 1. Clone repository
+git clone https://github.com/SDU-Immunoinformatics/SDU_Immunoinformatics.git
+cd SDU_Immunoinformatics
+
+# 2. Run automated self-check (downloads demo data, builds DB, tests DuckDB)
+Rscript OASpepDB/scripts/verify_reproducibility.R
+
+# 3. Launch interactive web app
+# Windows: Double-click OASpepDB/DBquery-Windows.bat
+# Linux:   bash OASpepDB/DBquery-Linux.sh
+# macOS:   bash OASpepDB/DBquery-Mac.command
+```
 
 ---
 
-## 6. Cohort Distribution Summary
+### Option B: Use Full Pre-compiled Database (Recommended for Proteomics Researchers)
+If you want to immediately query, analyze, and export search-ready FASTA databases across the entire **65.5 million peptides (all 25 cohorts)** without spending hours downloading and re-computing:
 
-| Clinical Category | Diseases / Cohorts Included | Non-Redundant CDR3 Peptides |
+1. **Download the pre-compiled database** from **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*, ~18 GB compressed).
+2. **Extract the archive** to the repository root as `CDR3_db/` (or place it at `D:/OAS/unpaired/CDR3_db`).
+3. **Launch the Web App**:
+   - **Windows**: Double-click `OASpepDB/DBquery-Windows.bat`
+   - **Linux**: `bash OASpepDB/DBquery-Linux.sh`
+   - **macOS**: `bash OASpepDB/DBquery-Mac.command`
+   *(Or click the **"Load DB"** button inside the app to select any custom folder where you unzipped the database).*
+
+---
+
+### Option C: Recompute Full Database from Scratch (For Developers / HPC)
+To re-process all 14,433 OAS studies from raw FASTQ/CSV streams on your own workstation or cluster, see the [Detailed Pipeline Guide](#detailed-pipeline-execution-from-scratch) below.
+
+---
+
+## 3. Interactive Web Application (`DBquery.R`)
+
+The built-in web application connects an in-memory **DuckDB OLAP engine** to the Hive-partitioned Parquet database for sub-second exploration and export:
+
+1. **Cohort Stratification Dashboard**:
+   - Interactive **Alluvial diagram** visualizing clonal flow across clinical categories, cohorts, tissue sources (PBMC, Tonsil, Spleen), B-cell types (Memory, Naive, Plasma), and isotypes (IgG, IgA, IgM, IgE, Light).
+   - **Clonal Stringency Filters**: Threshold by minimum patient sharing ($N \ge 1, 2, 3, 5$) to identify convergent public antibodies, and minimum read depth ($Redundancy \ge 1, 5, 10, 50$).
+2. **Search-Ready Proteomics Export**:
+   - Exports `OAS_<Disease>_<Date>.fasta` containing minimal-flank micro-cassettes, common laboratory contaminants ([cRAP](https://www.thegpm.org/crap/)), and auto-scaled ~1% non-human Camelid VHH entrapment controls ($I \rightarrow L$ converted) for empirical target-decoy false discovery rate (FDR) validation.
+   - Also exports analysis-ready `.parquet` tables and `.txt` query audit manifests.
+3. **Reverse Peptide Lookup**:
+   - Paste any identified experimental tryptic peptide sequence (e.g. from FragPipe, MaxQuant, or Mascot) to instantly identify its parent clonotype, disease specificity, isotype, and patient recurrence.
+
+---
+
+## 4. Cohort Distribution Summary (25 Clinical Cohorts)
+
+| Clinical Category | Disease Cohorts Included | Non-Redundant CDR3 Peptides |
 | :--- | :--- | :--- |
 | **Infectious Diseases** | COVID-19, HIV, CMV-EBV, Influenza, Sepsis, RSV, West Nile, Dengue, Ebola, Hepatitis B, Cholera, Rotavirus, Enterovirus, Lyme, S. pneumoniae, C. difficile | **39,400,000+** |
 | **Allergy & Airways** | Allergy-SIT, Allergy-NoSIT, Asthma | **8,900,000+** |
 | **Autoimmune & Neuro** | SLE (Lupus), Multiple Sclerosis, Rheumatoid Arthritis, Myasthenia Gravis | **13,300,000+** |
 | **Hematology & Tumors** | CLL (Chronic Lymphocytic Leukemia), Melanoma | **3,900,000+** |
-| **Total Database** | **25 Disease Cohorts** | **65,510,795** |
+| **Total Database** | **25 Human Disease Cohorts** | **65,510,795** |
 
 ---
 
-## 7. Data Availability
+## 5. Technical Details & Advanced Pipeline
 
-* **Catalog and Reference Annotations**: Included directly in this repository under [`OASpepDB/data/`](OASpepDB/data/).
-* **Raw Repertoire Sequences**: Publicly hosted by the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/).
-* **Pre-compiled Parquet Database**: The complete partitioned database (~18 GB compressed Parquet across 25 cohorts) is archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*). Extract the archive to `D:/OAS/unpaired/CDR3_db` (or select your custom database folder via the 'Load DB' button in `DBquery.R`).
+<details>
+<summary><b>▶ Click to expand Step-by-Step Pipeline & Architecture (Full Reproduction)</b></summary>
+
+### System Hardware Requirements
+
+| Configuration | CPU Cores | RAM | Free Disk Space | Runtime |
+| :--- | :---: | :---: | :---: | :---: |
+| **Demo Mode (Option A)** | Any (>= 2 cores) | >= 4 GB | < 100 MB | ~5 seconds |
+| **Full Build (Option C)** | >= 8 cores (16 rec.) | >= 32 GB | >= 200 GB SSD | ~3–5 hours |
+
+### Repository Structure
+
+```text
+SDU_Immunoinformatics/
+├── OASpepDB/
+│   ├── DBquery.R                           # Interactive Shiny web app (DuckDB OLAP)
+│   ├── DBquery-Windows.bat                 # 1-click launcher for Windows
+│   ├── DBquery-Mac.command                 # 1-click launcher for macOS
+│   ├── DBquery-Linux.sh                    # 1-click launcher for Linux
+│   ├── data/
+│   │   ├── OAS_metadata.csv                # Curated master catalog (14,433 studies, 3.77 MB)
+│   │   ├── cRAP.fasta                      # Common mass spec contaminant reference
+│   │   ├── entrapment_cassettes.fasta      # Camelid VHH entrapment controls for empirical FDR
+│   │   ├── demo_download_human_unpaired.sh # Lightweight demo downloader (~15 KB)
+│   │   └── bulk_download_human_unpaired.sh # Full production downloader (14,433 studies)
+│   └── scripts/
+│       ├── 01_download_OAS.py              # Step 01: Streaming download & biological QC trimming
+│       ├── 02_build_healthy_cdr3_cache.py  # Step 02: PyArrow SIMD healthy CDR3 indexer
+│       ├── 03_insilico_digest.R            # Step 03: Human proteome in silico tryptic digest
+│       ├── 04_build_disease_db.py          # Step 04: Disease-exclusive Hive database builder
+│       ├── 05_fetch_ncbi_entrapment.py     # Step 05: NCBI Entrez Camelid VHH harvester
+│       ├── download_reference_proteomes.py # UniProt & RefSeq proteome fetcher
+│       ├── generate_unified_alluvial_svg.R # Dynamic alluvial diagram generator
+│       └── verify_reproducibility.R        # Automated zero-state self-check script
+├── requirements.txt                        # Python dependencies
+├── LICENSE                                 # MIT License
+└── Readme.md                               # Project documentation
+```
+
+### Detailed Pipeline Execution (From Scratch)
+
+```bash
+# Prerequisites
+pip install -r requirements.txt
+R -e "install.packages(c('shiny','bslib','DT','duckdb','DBI','arrow','ggplot2','plotly','dplyr','htmlwidgets','zip'), repos='https://cloud.r-project.org')"
+
+# Step 01: Stream & Trim Repertoires
+# (Use demo_download_human_unpaired.sh for Demo or bulk_download_human_unpaired.sh for Full)
+python OASpepDB/scripts/01_download_OAS.py \
+    --sh OASpepDB/data/bulk_download_human_unpaired.sh \
+    --out-dir OAS_raw --threads 8
+
+# Step 02: Index Healthy Control CDR3 Cache (Tier-1 Subtraction)
+python OASpepDB/scripts/02_build_healthy_cdr3_cache.py \
+    --metadata OASpepDB/data/OAS_metadata.csv \
+    --data-dir OAS_raw \
+    --out-parquet CDR3_db/healthy_cdr3_cache.parquet \
+    --workers 16
+
+# Step 03: Digest Human Reference Proteomes (Tier-2 & Tier-3 Subtraction)
+python OASpepDB/scripts/download_reference_proteomes.py
+Rscript OASpepDB/scripts/03_insilico_digest.R
+
+# Step 04: Construct Disease-Exclusive Hive Database
+python OASpepDB/scripts/04_build_disease_db.py \
+    --metadata OASpepDB/data/OAS_metadata.csv \
+    --data-dir OAS_raw \
+    --healthy-cache CDR3_db/healthy_cdr3_cache.parquet \
+    --negative-ref OASpepDB/data/negative_human_reference_peptides.parquet \
+    --out-dir CDR3_db --workers 8
+
+# Step 05: Harvest Camelid VHH Entrapment Controls
+python OASpepDB/scripts/05_fetch_ncbi_entrapment.py --target-count 2000
+```
+
+### Biological & Mass Spectrometry Engineering Principles
+
+1. **Minimal-Flank Micro-Cassette Construction**:
+   $$\text{Micro-Cassette} = [\text{Minimal\_FR3\_Flank}] + [\text{CDR3}] + [\text{FR4}] + [\text{Isotype\_Tail}]$$
+   Eliminates redundant upstream Framework 3 tryptic sites to prevent false-positive framework PSMs while preserving the conserved C104 anchor and terminal constant domain cleavage (`+ASTK` for IgG/IgM/Bulk, `+ASPTSPK` for IgA, `+GQPK` for Lambda, native terminus for Kappa).
+2. **Proteolytic Cleavage Calibration**:
+   Tryptic digestion strictly follows Keil rules ($[KR](?!P)$). CDR3-bearing peptides are filtered for mass spectrometry proteotypic lengths (7–40 aa) and hypervariable core overlap ($\ge 5$ aa).
+3. **Calibrated Empirical FDR Control**:
+   Authentic non-human Camelid VHH sequences with isobaric $I \rightarrow L$ mutations are automatically spiked into exported FASTA databases at $\sim 1\%$ to provide an empirical negative benchmark during database searching.
+
+</details>
 
 ---
 
-## 8. Citation & Contact
+## 6. Citation & Data Availability
 
-<!-- To be updated upon publication -->
+* **Pre-compiled Parquet Database**: Archived on **Zenodo** (*DOI: [10.5281/zenodo.10561456](https://doi.org/10.5281/zenodo.10561456)*).
+* **Reference Annotations & Catalogs**: Available under [`OASpepDB/data/`](OASpepDB/data/).
+* **Raw Repertoire Data**: Publicly hosted by the [Observed Antibody Space](https://opig.stats.ox.ac.uk/webapps/oas/).
 
+```bibtex
+@article{OASpepDB2026,
+  title   = {OASpepDB: A Curated Disease-Exclusive Antibody CDR3 Database for High-Throughput Immunoproteomics},
+  author  = {SDU Immunoinformatics Group},
+  journal = {Preprint / Under Review},
+  year    = {2026},
+  doi     = {10.5281/zenodo.10561456}
+}
+```
